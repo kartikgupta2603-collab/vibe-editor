@@ -1,0 +1,69 @@
+{
+  "id": "viral_creator",
+  "name": "Viral Creator",
+  "description": "Modern high-retention Instagram/TikTok creator layout: viral hook pill, floating Spotify-style sound tag, and clean bilingual subtitles without cluttered text",
+  "background": {
+    "type": "blur",
+    "blur": 32,
+    "brightness": -0.20,
+    "contrast": 1.30,
+    "saturation": 1.35,
+    "opacity": 0.92,
+    "zoom": 1.22
+  },
+  "video": {
+    "scale": 1.0,
+    "border_width": 3,
+    "border_color": "#38bdf8",
+    "corner_radius": 18,
+    "shadow_enabled": true,
+    "shadow_color": "#0284c788",
+    "shadow_blur": 35,
+    "vertical_offset": -50
+  },
+  "series_text": {
+    "enabled": true,
+    "font": "Arial-Bold",
+    "size": 34,
+    "color": "#ffffff",
+    "y_percent": 16,
+    "letter_spacing": 2,
+    "text_transform": "uppercase",
+    "background_pill": false,
+    "pill_color": "#00000000"
+  },
+  "song_title": {
+    "enabled": false,
+    "font": "Arial-Bold",
+    "size": 48,
+    "color": "#ffffff",
+    "y_percent": 68
+  },
+  "anime_name": {
+    "enabled": false,
+    "font": "Arial",
+    "size": 28,
+    "color": "#94a3b8",
+    "y_percent": 74
+  },
+  "track_pill": {
+    "enabled": true,
+    "size": 26,
+    "color": "#f8fafc",
+    "pill_color": "#0f172add",
+    "y_percent": 68
+  },
+  "caption": {
+    "enabled": true,
+    "font": "Arial-Bold",
+    "size": 32,
+    "color": "#f8fafc",
+    "y_percent": 68,
+    "background_pill": true,
+    "pill_color": "#0f172acc"
+  },
+  "filter": "none",
+  "vignette": 0.35,
+  "grain": 0.03,
+  "audio_visualizer": true
+}

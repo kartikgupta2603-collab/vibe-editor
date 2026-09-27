@@ -1,0 +1,920 @@
+{
+  "app/ai/gemini_client.py": {
+    "mtime": 1790354462.975468,
+    "seen": 1790405759.0600898,
+    "ast_hash": "30da390074059d303a80d90528cbc286",
+    "semantic_hash": ""
+  },
+  "app/config/settings.py": {
+    "mtime": 1789701834.0796163,
+    "seen": 1789808128.0750377,
+    "ast_hash": "f5ae451e7be66a1b869e28b45cd63091",
+    "semantic_hash": "f5ae451e7be66a1b869e28b45cd63091"
+  },
+  "app/main.py": {
+    "mtime": 1790402501.1836398,
+    "seen": 1790405759.0600898,
+    "ast_hash": "b97d75df357740084749fd2386f608e8",
+    "semantic_hash": ""
+  },
+  "app/projects/project_manager.py": {
+    "mtime": 1790322655.7113516,
+    "seen": 1790323494.131364,
+    "ast_hash": "c5c2bc93b9ed2323f078048c8af19d46",
+    "semantic_hash": ""
+  },
+  "app/scheduler/__init__.py": {
+    "mtime": 1789701674.1751168,
+    "seen": 1789808128.0750377,
+    "ast_hash": "088deabaa5297b14dcb4333afcce4223",
+    "semantic_hash": "088deabaa5297b14dcb4333afcce4223"
+  },
+  "app/scheduler/instagram_scheduler.py": {
+    "mtime": 1790323428.7650464,
+    "seen": 1790323494.131364,
+    "ast_hash": "d4559d4e061d63502a6e18a246340f14",
+    "semantic_hash": ""
+  },
+  "app/static/app.js": {
+    "mtime": 1790406225.872799,
+    "seen": 1790406340.87543,
+    "ast_hash": "e1ef09dda737aa9c334dcf4918af0e28",
+    "semantic_hash": ""
+  },
+  "app/static/vendor/OrbitControls.js": {
+    "mtime": 1788879946.4490657,
+    "seen": 1789808128.0750377,
+    "ast_hash": "98d0f30d2f372eb8ddd748a23a6763c8",
+    "semantic_hash": "98d0f30d2f372eb8ddd748a23a6763c8"
+  },
+  "app/static/vendor/three.min.js": {
+    "mtime": 1788879932.4193113,
+    "seen": 1789808128.0750377,
+    "ast_hash": "eb8549863a97355411c3259a3f93b8e1",
+    "semantic_hash": "eb8549863a97355411c3259a3f93b8e1"
+  },
+  "app/templates/template_manager.py": {
+    "mtime": 1790322662.272852,
+    "seen": 1790323494.131364,
+    "ast_hash": "8ed0bf23895a7878ec6bd8b6a310960b",
+    "semantic_hash": ""
+  },
+  "app/video/downloader.py": {
+    "mtime": 1790359688.8668392,
+    "seen": 1790405759.0600898,
+    "ast_hash": "86ae6c55b272786eac62d189fcf439a0",
+    "semantic_hash": ""
+  },
+  "app/video/preview.py": {
+    "mtime": 1790318350.2778718,
+    "seen": 1790321135.1840093,
+    "ast_hash": "5db33bd7c8e82275e5beac55cd27251d",
+    "semantic_hash": ""
+  },
+  "app/video/probe.py": {
+    "mtime": 1790322765.2660348,
+    "seen": 1790323494.131364,
+    "ast_hash": "5e772734fdb32f72830b4e408b7e722a",
+    "semantic_hash": ""
+  },
+  "app/video/renderer.py": {
+    "mtime": 1790406097.5497801,
+    "seen": 1790406340.87543,
+    "ast_hash": "f4ee6deeebd5d3160071e740da4cbb1b",
+    "semantic_hash": ""
+  },
+  "run.py": {
+    "mtime": 1789110239.4334433,
+    "seen": 1789808128.0750377,
+    "ast_hash": "3ccb625dfd77ff8ad0c75f9e517406bf",
+    "semantic_hash": "3ccb625dfd77ff8ad0c75f9e517406bf"
+  },
+  "scratch/fix_subtitles.py": {
+    "mtime": 1789737371.6938744,
+    "seen": 1789808128.0750377,
+    "ast_hash": "25eb3471bc6642316425d704666c66bc",
+    "semantic_hash": "25eb3471bc6642316425d704666c66bc"
+  },
+  "scratch/remove_wave_floating.py": {
+    "mtime": 1789737623.4564242,
+    "seen": 1789808128.0750377,
+    "ast_hash": "eaa35dfd03ca93f092abaa8b017edfc6",
+    "semantic_hash": "eaa35dfd03ca93f092abaa8b017edfc6"
+  },
+  "scratch/test_side_bars.py": {
+    "mtime": 1789807957.6265304,
+    "seen": 1789808128.0750377,
+    "ast_hash": "dcaa3be5d69a15bc1fcb97febf3dbfb4",
+    "semantic_hash": "dcaa3be5d69a15bc1fcb97febf3dbfb4"
+  },
+  "templates/bold.json": {
+    "mtime": 1788879807.5070298,
+    "seen": 1789808128.0750377,
+    "ast_hash": "46b7c8dbb538602382c020e0871e895e",
+    "semantic_hash": "46b7c8dbb538602382c020e0871e895e"
+  },
+  "templates/cinematic.json": {
+    "mtime": 1788879798.7348537,
+    "seen": 1789808128.0750377,
+    "ast_hash": "9bdfe2481f4afc01686b9ac88584e56e",
+    "semantic_hash": "9bdfe2481f4afc01686b9ac88584e56e"
+  },
+  "templates/clean.json": {
+    "mtime": 1788879812.6743512,
+    "seen": 1789808128.0750377,
+    "ast_hash": "f38bddccb5f304054b91c7fc8c1f5fe3",
+    "semantic_hash": "f38bddccb5f304054b91c7fc8c1f5fe3"
+  },
+  "templates/dark.json": {
+    "mtime": 1788879816.41091,
+    "seen": 1789808128.0750377,
+    "ast_hash": "640225d7b5df50b787074b331e0c7aea",
+    "semantic_hash": "640225d7b5df50b787074b331e0c7aea"
+  },
+  "templates/energetic.json": {
+    "mtime": 1788879820.8081274,
+    "seen": 1789808128.0750377,
+    "ast_hash": "53a322f7694499661a2646a7049114d6",
+    "semantic_hash": "53a322f7694499661a2646a7049114d6"
+  },
+  "templates/minimal.json": {
+    "mtime": 1788879802.228082,
+    "seen": 1789808128.0750377,
+    "ast_hash": "e7384eba6d1b95f09405c603511642e8",
+    "semantic_hash": "e7384eba6d1b95f09405c603511642e8"
+  },
+  "tests/test_api.py": {
+    "mtime": 1789127063.9401352,
+    "seen": 1789808128.0750377,
+    "ast_hash": "e6f4a4fbfe6a1bd14ac745fccf49b03f",
+    "semantic_hash": "e6f4a4fbfe6a1bd14ac745fccf49b03f"
+  },
+  "tests/test_aspect_ratios.py": {
+    "mtime": 1788962423.2920587,
+    "seen": 1789808128.0750377,
+    "ast_hash": "e801f9ce112cbabf025e2b6f1197a034",
+    "semantic_hash": "e801f9ce112cbabf025e2b6f1197a034"
+  },
+  "tests/test_letterbox_crop.py": {
+    "mtime": 1789802035.0659113,
+    "seen": 1789808128.0750377,
+    "ast_hash": "d1f1856aa3395c4de8f7df0fe601ce48",
+    "semantic_hash": "d1f1856aa3395c4de8f7df0fe601ce48"
+  },
+  "tests/test_phase1.py": {
+    "mtime": 1788880096.8589375,
+    "seen": 1789808128.0750377,
+    "ast_hash": "a25377d46fc236dd33c2b47bed979707",
+    "semantic_hash": "a25377d46fc236dd33c2b47bed979707"
+  },
+  "tests/test_scheduler.py": {
+    "mtime": 1789702912.0123565,
+    "seen": 1789808128.0750377,
+    "ast_hash": "8782c1d0545f3695f3b6a52554011450",
+    "semantic_hash": "8782c1d0545f3695f3b6a52554011450"
+  },
+  "tests/test_text_mobilization.py": {
+    "mtime": 1789724377.7831771,
+    "seen": 1789808128.0750377,
+    "ast_hash": "87f7b3d66f5a3470ed31ab6d02c29fb4",
+    "semantic_hash": "87f7b3d66f5a3470ed31ab6d02c29fb4"
+  },
+  "tests/test_watermark.py": {
+    "mtime": 1789798297.1935146,
+    "seen": 1789808128.0750377,
+    "ast_hash": "35519b5fd529f13088dcd914237d816b",
+    "semantic_hash": "35519b5fd529f13088dcd914237d816b"
+  },
+  "tests/test_youtube.py": {
+    "mtime": 1790359728.530153,
+    "seen": 1790405759.0600898,
+    "ast_hash": "f97a51a5f3ff11cc3b6a211226c8d867",
+    "semantic_hash": ""
+  },
+  "downloads/Fire Force Opening 1 _ Inferno by Mrs.GREEN APPLE.mp4": {
+    "mtime": 1789799601.7336717,
+    "seen": 1789808128.0750377,
+    "ast_hash": "2a85850dc1c4d3a36749488e51ec9f30",
+    "semantic_hash": "2a85850dc1c4d3a36749488e51ec9f30"
+  },
+  "downloads/Komi Can't Communicate OP (Clean) _ Cinderella - CIDERGIRL _ Netflix Anime.mp4": {
+    "mtime": 1789629799.2744691,
+    "seen": 1789808128.0750377,
+    "ast_hash": "7f0b9663b3c294d4232e3466d732e8a7",
+    "semantic_hash": "7f0b9663b3c294d4232e3466d732e8a7"
+  },
+  "downloads/Me at the zoo.mp4": {
+    "mtime": 1788971879.221349,
+    "seen": 1789808128.0750377,
+    "ast_hash": "ad967e2449e1414eba028839172f9b65",
+    "semantic_hash": "ad967e2449e1414eba028839172f9b65"
+  },
+  "downloads/Narvent - Her Eyes (4K Music Video).mp4": {
+    "mtime": 1789573062.9984348,
+    "seen": 1789808128.0750377,
+    "ast_hash": "f7eae4fe9b11ddfae65b9b7dead30df8",
+    "semantic_hash": "f7eae4fe9b11ddfae65b9b7dead30df8"
+  },
+  "downloads/Narvent - Her Eyes (4K Music Video)_h264.mp4": {
+    "mtime": 1789619823.4627783,
+    "seen": 1789808128.0750377,
+    "ast_hash": "8fafcbb4ccb3e60fc12391bf44e0b0a1",
+    "semantic_hash": "8fafcbb4ccb3e60fc12391bf44e0b0a1"
+  },
+  "downloads/\u3010LIVE\u6620\u50cf\u3011\u7d50\u675f\u30d0\u30f3\u30c9\u300c\u30ae\u30bf\u30fc\u3068\u5b64\u72ec\u3068\u84bc\u3044\u60d1\u661f\u300dLIVE at STARRY _ \u300c\u307c\u3063\u3061\u30fb\u3056\u30fb\u308d\u3063\u304f\uff01\u300d\u5287\u4e2d\u66f2.mp4": {
+    "mtime": 1788971953.856898,
+    "seen": 1789808128.0750377,
+    "ast_hash": "0b8a2837a36e983bdcce3dd7bbf5c540",
+    "semantic_hash": "0b8a2837a36e983bdcce3dd7bbf5c540"
+  },
+  "downloads/\u3010LIVE\u6620\u50cf\u3011\u7d50\u675f\u30d0\u30f3\u30c9\u300c\u30ae\u30bf\u30fc\u3068\u5b64\u72ec\u3068\u84bc\u3044\u60d1\u661f\u300dLIVE at STARRY _ \u300c\u307c\u3063\u3061\u30fb\u3056\u30fb\u308d\u3063\u304f\uff01\u300d\u5287\u4e2d\u66f2_h264.mp4": {
+    "mtime": 1789619243.2971861,
+    "seen": 1789808128.0750377,
+    "ast_hash": "b9d601718c9c33e70ee726a3de5a8509",
+    "semantic_hash": "b9d601718c9c33e70ee726a3de5a8509"
+  },
+  "ss to fix/Recording 2026-09-17 125120.mp4": {
+    "mtime": 1789629676.7428417,
+    "seen": 1789808128.0750377,
+    "ast_hash": "b3bbf6b2a4e2d682c110e37fb1853b26",
+    "semantic_hash": "b3bbf6b2a4e2d682c110e37fb1853b26"
+  },
+  "tests/test_text_color_multiline.py": {
+    "mtime": 1789921881.7149513,
+    "seen": 1789922041.6789691,
+    "ast_hash": "4b4e79347ee7384bd1d9e41d4379e5d9",
+    "semantic_hash": ""
+  },
+  ".agents/rules/graphify.md": {
+    "mtime": 1789808139.774607,
+    "seen": 1789898615.161504,
+    "ast_hash": "a0e4d192b9e2e17256124dbfc8e24e6a",
+    "semantic_hash": ""
+  },
+  ".agents/workflows/graphify.md": {
+    "mtime": 1789808139.7763565,
+    "seen": 1789898615.161504,
+    "ast_hash": "a831cf3669f1e6ab85d8a80ebe655f99",
+    "semantic_hash": ""
+  },
+  "AGENTS.md": {
+    "mtime": 1789636992.6341014,
+    "seen": 1789898615.161504,
+    "ast_hash": "2cfaa2a87bfbeb9e1b86792e440dc36a",
+    "semantic_hash": ""
+  },
+  "GEMINI.md": {
+    "mtime": 1789911064.430133,
+    "seen": 1789911134.2502155,
+    "ast_hash": "60d9f4e98dcb70538b0d63295c3cf5a3",
+    "semantic_hash": ""
+  },
+  "app/static/index.html": {
+    "mtime": 1790406108.4535973,
+    "seen": 1790406340.87543,
+    "ast_hash": "ce1a5957b5bf4238e0af7bade5fd9d4d",
+    "semantic_hash": ""
+  },
+  "app/static/examples/style_1_bold_stroke.png": {
+    "mtime": 1789136242.0952518,
+    "seen": 1789898615.161504,
+    "ast_hash": "0e64bf3bbffe1bc98525cce39ae2012d",
+    "semantic_hash": ""
+  },
+  "app/static/examples/style_2_spotify_lyrics.png": {
+    "mtime": 1789136242.0989747,
+    "seen": 1789898615.161504,
+    "ast_hash": "0fe21b219e3567635d46091e8b701749",
+    "semantic_hash": ""
+  },
+  "app/static/examples/style_3_neon_glow.png": {
+    "mtime": 1789136242.0989747,
+    "seen": 1789898615.161504,
+    "ast_hash": "5a3c4de4a30c138497d9acd089493a2c",
+    "semantic_hash": ""
+  },
+  "app/static/examples/style_4_tiktok_karaoke.png": {
+    "mtime": 1789136242.0989747,
+    "seen": 1789898615.161504,
+    "ast_hash": "29c3df3930829e2e2d5bf4607fdd8844",
+    "semantic_hash": ""
+  },
+  "app/static/examples/style_5_cinematic_movie.png": {
+    "mtime": 1789136242.0989747,
+    "seen": 1789898615.161504,
+    "ast_hash": "43b34fb32b44f5be42f255d7dc0b24c9",
+    "semantic_hash": ""
+  },
+  "app/static/examples/subtitle_styles_closeup.png": {
+    "mtime": 1789136255.2790482,
+    "seen": 1789898615.161504,
+    "ast_hash": "3932ee2db149e10b06d80260b6cdb0a5",
+    "semantic_hash": ""
+  },
+  "app/static/examples/subtitle_styles_comparison.png": {
+    "mtime": 1789136242.1154857,
+    "seen": 1789898615.161504,
+    "ast_hash": "0c65f23150a1d4ddb66553bb4c38e75b",
+    "semantic_hash": ""
+  },
+  ".specify/init-options.json": {
+    "mtime": 1789911015.2318716,
+    "seen": 1789911134.2502155,
+    "ast_hash": "7b7b727ce09474f9c05cf7f8f2d5a519",
+    "semantic_hash": ""
+  },
+  ".specify/integration.json": {
+    "mtime": 1789911015.0016582,
+    "seen": 1789911134.2502155,
+    "ast_hash": "72c7813bb516a0ef98ba912828618c8f",
+    "semantic_hash": ""
+  },
+  ".specify/integrations/agy.manifest.json": {
+    "mtime": 1789911014.998315,
+    "seen": 1789911134.2502155,
+    "ast_hash": "d7c9f63caca9912fd039f7b1b4498d8b",
+    "semantic_hash": ""
+  },
+  ".specify/integrations/speckit.manifest.json": {
+    "mtime": 1789911015.1985185,
+    "seen": 1789911134.2502155,
+    "ast_hash": "84f57ad643952d2eb381f5a45057bf97",
+    "semantic_hash": ""
+  },
+  ".specify/memory/.constitution-template.json": {
+    "mtime": 1789911015.238808,
+    "seen": 1789911134.2502155,
+    "ast_hash": "7e3332a78cec1722b4351c6bf52dfc51",
+    "semantic_hash": ""
+  },
+  ".specify/scripts/powershell/check-prerequisites.ps1": {
+    "mtime": 1789911015.0217962,
+    "seen": 1789911134.2502155,
+    "ast_hash": "14e6a9d0a49c8dee7276cb697e18d0d4",
+    "semantic_hash": ""
+  },
+  ".specify/scripts/powershell/common.ps1": {
+    "mtime": 1789911015.0260496,
+    "seen": 1789911134.2502155,
+    "ast_hash": "fd09e10201fab5e4181d4ed5012bc511",
+    "semantic_hash": ""
+  },
+  ".specify/scripts/powershell/create-new-feature.ps1": {
+    "mtime": 1789911015.0584784,
+    "seen": 1789911134.2502155,
+    "ast_hash": "7606c5655ba7fae8199955a559152852",
+    "semantic_hash": ""
+  },
+  ".specify/scripts/powershell/resolve-template.ps1": {
+    "mtime": 1789911015.0930612,
+    "seen": 1789911134.2502155,
+    "ast_hash": "645ad018c6297df6e23949ac3e915749",
+    "semantic_hash": ""
+  },
+  ".specify/scripts/powershell/setup-plan.ps1": {
+    "mtime": 1789911015.1013389,
+    "seen": 1789911134.2502155,
+    "ast_hash": "d1fb3697610c8aa9ce97e00bcd073ae4",
+    "semantic_hash": ""
+  },
+  ".specify/scripts/powershell/setup-tasks.ps1": {
+    "mtime": 1789911015.1072264,
+    "seen": 1789911134.2502155,
+    "ast_hash": "9aa2f52ce7abece8476845b1f21a0ced",
+    "semantic_hash": ""
+  },
+  ".specify/workflows/workflow-registry.json": {
+    "mtime": 1789911015.2318716,
+    "seen": 1789911134.2502155,
+    "ast_hash": "f37204570e4ffc93db1cd5c091bb4b52",
+    "semantic_hash": ""
+  },
+  "scratch/test_inferno_playback.py": {
+    "mtime": 1789910221.310462,
+    "seen": 1789911134.2502155,
+    "ast_hash": "dc538aca9460abaea76b7550ea8ba067",
+    "semantic_hash": ""
+  },
+  "scratch/test_seek_clean.py": {
+    "mtime": 1789909937.151131,
+    "seen": 1789911134.2502155,
+    "ast_hash": "68b5287b559d2a07c47e1d4b3358a87c",
+    "semantic_hash": ""
+  },
+  ".agents/agents/implementer/agent.md": {
+    "mtime": 1789911072.2085958,
+    "seen": 1789911134.2502155,
+    "ast_hash": "f393a1acb56340f128412b59061252b5",
+    "semantic_hash": ""
+  },
+  ".agents/agents/investigator/agent.md": {
+    "mtime": 1789911068.2998679,
+    "seen": 1789911134.2502155,
+    "ast_hash": "351451387e96df27719c32f2b81d8911",
+    "semantic_hash": ""
+  },
+  ".agents/agents/reviewer/agent.md": {
+    "mtime": 1789911077.4123795,
+    "seen": 1789911134.2502155,
+    "ast_hash": "c47474599b181faee93e6f744303fcc0",
+    "semantic_hash": ""
+  },
+  ".agents/agents/verifier/agent.md": {
+    "mtime": 1789911082.7912688,
+    "seen": 1789911134.2502155,
+    "ast_hash": "1208d325f49f669f2d84573a403d4a1b",
+    "semantic_hash": ""
+  },
+  ".agents/skills/agent-browser/SKILL.md": {
+    "mtime": 1789911053.5829487,
+    "seen": 1789911134.2502155,
+    "ast_hash": "51ddf70652e5eac7f8d0a95a981306c4",
+    "semantic_hash": ""
+  },
+  ".agents/skills/reel-gemini-analyzer/SKILL.md": {
+    "mtime": 1789911039.3103497,
+    "seen": 1789911134.2502155,
+    "ast_hash": "03456bebc7c4ec15b71141f8000e7f55",
+    "semantic_hash": ""
+  },
+  ".agents/skills/reel-studio-monitor/SKILL.md": {
+    "mtime": 1789911044.465988,
+    "seen": 1789911134.2502155,
+    "ast_hash": "3f412aa89807af053bd1b69f173bb98f",
+    "semantic_hash": ""
+  },
+  ".agents/skills/reel-test-verify/SKILL.md": {
+    "mtime": 1789911049.002587,
+    "seen": 1789911134.2502155,
+    "ast_hash": "7e624b98c87ae5aafec65c3bb294dd6c",
+    "semantic_hash": ""
+  },
+  ".agents/skills/reel-video-pipeline/SKILL.md": {
+    "mtime": 1789911035.0540311,
+    "seen": 1789911134.2502155,
+    "ast_hash": "6c2c1472bbad429a8d47bd947bfa9093",
+    "semantic_hash": ""
+  },
+  ".agents/skills/speckit-analyze/SKILL.md": {
+    "mtime": 1789911014.8084514,
+    "seen": 1789911134.2502155,
+    "ast_hash": "0f21c261f659f12e35e4ee1e32efba74",
+    "semantic_hash": ""
+  },
+  ".agents/skills/speckit-checklist/SKILL.md": {
+    "mtime": 1789911014.9193542,
+    "seen": 1789911134.2502155,
+    "ast_hash": "f64848d46b6568c11f2e7a0cfdbbc18f",
+    "semantic_hash": ""
+  },
+  ".agents/skills/speckit-clarify/SKILL.md": {
+    "mtime": 1789911014.829224,
+    "seen": 1789911134.2502155,
+    "ast_hash": "7bcac7784718b9676eeb43b4b5c9d749",
+    "semantic_hash": ""
+  },
+  ".agents/skills/speckit-constitution/SKILL.md": {
+    "mtime": 1789911014.8496282,
+    "seen": 1789911134.2502155,
+    "ast_hash": "dd6dc0d3d4912528e95efa283a990f29",
+    "semantic_hash": ""
+  },
+  ".agents/skills/speckit-converge/SKILL.md": {
+    "mtime": 1789911014.8798418,
+    "seen": 1789911134.2502155,
+    "ast_hash": "72a7c9d8e41ac630dbd57106fff1644e",
+    "semantic_hash": ""
+  },
+  ".agents/skills/speckit-implement/SKILL.md": {
+    "mtime": 1789911014.8681445,
+    "seen": 1789911134.2502155,
+    "ast_hash": "0090352efbc44010a9f4ecef466800ca",
+    "semantic_hash": ""
+  },
+  ".agents/skills/speckit-plan/SKILL.md": {
+    "mtime": 1789911014.901572,
+    "seen": 1789911134.2502155,
+    "ast_hash": "97776dd51d5d2056b9b049ce9b54e286",
+    "semantic_hash": ""
+  },
+  ".agents/skills/speckit-specify/SKILL.md": {
+    "mtime": 1789911014.9376519,
+    "seen": 1789911134.2502155,
+    "ast_hash": "5e06b402c9038c4de0dabea9adeaf46b",
+    "semantic_hash": ""
+  },
+  ".agents/skills/speckit-tasks/SKILL.md": {
+    "mtime": 1789911014.9557116,
+    "seen": 1789911134.2502155,
+    "ast_hash": "214116a66572de9016d2ebdd5632d8b9",
+    "semantic_hash": ""
+  },
+  ".agents/skills/speckit-taskstoissues/SKILL.md": {
+    "mtime": 1789911014.973209,
+    "seen": 1789911134.2502155,
+    "ast_hash": "8a5847100b9071f985cf84bbb1ce666d",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/agent-browser/SKILL.md": {
+    "mtime": 1789911053.5829487,
+    "seen": 1789911134.2502155,
+    "ast_hash": "51ddf70652e5eac7f8d0a95a981306c4",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/reel-gemini-analyzer/SKILL.md": {
+    "mtime": 1789911039.3103497,
+    "seen": 1789911134.2502155,
+    "ast_hash": "03456bebc7c4ec15b71141f8000e7f55",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/reel-studio-monitor/SKILL.md": {
+    "mtime": 1789911044.465988,
+    "seen": 1789911134.2502155,
+    "ast_hash": "3f412aa89807af053bd1b69f173bb98f",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/reel-test-verify/SKILL.md": {
+    "mtime": 1789911049.002587,
+    "seen": 1789911134.2502155,
+    "ast_hash": "7e624b98c87ae5aafec65c3bb294dd6c",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/reel-video-pipeline/SKILL.md": {
+    "mtime": 1789911035.0540311,
+    "seen": 1789911134.2502155,
+    "ast_hash": "6c2c1472bbad429a8d47bd947bfa9093",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/speckit-analyze/SKILL.md": {
+    "mtime": 1789911014.8084514,
+    "seen": 1789911134.2502155,
+    "ast_hash": "0f21c261f659f12e35e4ee1e32efba74",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/speckit-checklist/SKILL.md": {
+    "mtime": 1789911014.9193542,
+    "seen": 1789911134.2502155,
+    "ast_hash": "f64848d46b6568c11f2e7a0cfdbbc18f",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/speckit-clarify/SKILL.md": {
+    "mtime": 1789911014.829224,
+    "seen": 1789911134.2502155,
+    "ast_hash": "7bcac7784718b9676eeb43b4b5c9d749",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/speckit-constitution/SKILL.md": {
+    "mtime": 1789911014.8496282,
+    "seen": 1789911134.2502155,
+    "ast_hash": "dd6dc0d3d4912528e95efa283a990f29",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/speckit-converge/SKILL.md": {
+    "mtime": 1789911014.8798418,
+    "seen": 1789911134.2502155,
+    "ast_hash": "72a7c9d8e41ac630dbd57106fff1644e",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/speckit-implement/SKILL.md": {
+    "mtime": 1789911014.8681445,
+    "seen": 1789911134.2502155,
+    "ast_hash": "0090352efbc44010a9f4ecef466800ca",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/speckit-plan/SKILL.md": {
+    "mtime": 1789911014.901572,
+    "seen": 1789911134.2502155,
+    "ast_hash": "97776dd51d5d2056b9b049ce9b54e286",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/speckit-specify/SKILL.md": {
+    "mtime": 1789911014.9376519,
+    "seen": 1789911134.2502155,
+    "ast_hash": "5e06b402c9038c4de0dabea9adeaf46b",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/speckit-tasks/SKILL.md": {
+    "mtime": 1789911014.9557116,
+    "seen": 1789911134.2502155,
+    "ast_hash": "214116a66572de9016d2ebdd5632d8b9",
+    "semantic_hash": ""
+  },
+  ".gemini/skills/speckit-taskstoissues/SKILL.md": {
+    "mtime": 1789911014.973209,
+    "seen": 1789911134.2502155,
+    "ast_hash": "8a5847100b9071f985cf84bbb1ce666d",
+    "semantic_hash": ""
+  },
+  ".specify/memory/constitution.md": {
+    "mtime": 1789911015.2318716,
+    "seen": 1789911134.2502155,
+    "ast_hash": "dcefb6b60e7cb3db2e966977b6f02f18",
+    "semantic_hash": ""
+  },
+  ".specify/templates/checklist-template.md": {
+    "mtime": 1789911015.1072264,
+    "seen": 1789911134.2502155,
+    "ast_hash": "5af23404f7e1314e93fab2bcfcfa5c23",
+    "semantic_hash": ""
+  },
+  ".specify/templates/constitution-template.md": {
+    "mtime": 1789911015.1216123,
+    "seen": 1789911134.2502155,
+    "ast_hash": "dcefb6b60e7cb3db2e966977b6f02f18",
+    "semantic_hash": ""
+  },
+  ".specify/templates/plan-template.md": {
+    "mtime": 1789911015.1417558,
+    "seen": 1789911134.2502155,
+    "ast_hash": "311db0670c3d19d2f5b781de97529b79",
+    "semantic_hash": ""
+  },
+  ".specify/templates/spec-template.md": {
+    "mtime": 1789911015.1570537,
+    "seen": 1789911134.2502155,
+    "ast_hash": "45ac8538bc1220324c9f0d610145b53f",
+    "semantic_hash": ""
+  },
+  ".specify/templates/tasks-template.md": {
+    "mtime": 1789911015.1741588,
+    "seen": 1789911134.2502155,
+    "ast_hash": "f8b4f62d384defa0a559bdbbaacb0540",
+    "semantic_hash": ""
+  },
+  ".specify/workflows/speckit/workflow.yml": {
+    "mtime": 1789910797.7638335,
+    "seen": 1789911134.2502155,
+    "ast_hash": "e85bd795c8a1bad1168a223eec732604",
+    "semantic_hash": ""
+  },
+  "downloads/Fire Force Opening 1 _ Inferno by Mrs.GREEN APPLE_h264.mp4": {
+    "mtime": 1789910113.7968874,
+    "seen": 1789911134.2502155,
+    "ast_hash": "f94a4b9b119527c9e181d281ea6d1cd0",
+    "semantic_hash": ""
+  },
+  "tests/test_color_filters.py": {
+    "mtime": 1789919186.3139117,
+    "seen": 1789919280.8084629,
+    "ast_hash": "ceacef00d5989d39be38d9d909e1cad8",
+    "semantic_hash": ""
+  },
+  "tests/test_color_adaptation.py": {
+    "mtime": 1789922980.8209815,
+    "seen": 1789923198.9631598,
+    "ast_hash": "7b27d53bf473f5cec9ff4a6c2f2b47bc",
+    "semantic_hash": ""
+  },
+  "tests/test_subtitle_language.py": {
+    "mtime": 1790063895.90724,
+    "seen": 1790064044.6223843,
+    "ast_hash": "55d03fd82f36ea3e59e0d18f0ea9524d",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-21 144611.png": {
+    "mtime": 1789982172.6532924,
+    "seen": 1790064044.6223843,
+    "ast_hash": "ec69b8a5fb481d0f55fb0407d97c50b9",
+    "semantic_hash": ""
+  },
+  "downloads/Parasyte_ The Maxim - Opening [4K 60FPS _ Creditless _ CC].mp4": {
+    "mtime": 1790062653.0513525,
+    "seen": 1790064044.6223843,
+    "ast_hash": "f6e8fd9226451e71d8ff19742e1ff2f0",
+    "semantic_hash": ""
+  },
+  "downloads/Parasyte_ The Maxim - Opening [4K 60FPS _ Creditless _ CC]_h264.mp4": {
+    "mtime": 1790062680.6382217,
+    "seen": 1790064044.6223843,
+    "ast_hash": "050cd1b1c65f33aeddc1fdc7fff67890",
+    "semantic_hash": ""
+  },
+  "tests/test_gemini_moments.py": {
+    "mtime": 1790082008.1904454,
+    "seen": 1790082037.5331707,
+    "ast_hash": "2748085b9ffbc4e2fdb465f436ea48ef",
+    "semantic_hash": ""
+  },
+  "app/static/canvas-animation.html": {
+    "mtime": 1790167712.2175424,
+    "seen": 1790238700.342864,
+    "ast_hash": "12c7c9e6c24de3b578b5893f98afa95a",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-23 205935.png": {
+    "mtime": 1790177375.9979553,
+    "seen": 1790238700.342864,
+    "ast_hash": "2e2821c93a3d09df4fe1c35c98624eec",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-24 115309.png": {
+    "mtime": 1790230990.0197034,
+    "seen": 1790238700.342864,
+    "ast_hash": "051e207e2e9675bc5a1f14bd1fc35f79",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-24 115328.png": {
+    "mtime": 1790231008.7013948,
+    "seen": 1790238700.342864,
+    "ast_hash": "e242cc86872b08b331899998e1873d79",
+    "semantic_hash": ""
+  },
+  "ss to fix/Recording 2026-09-23 181620.mp4": {
+    "mtime": 1790167577.7345862,
+    "seen": 1790238700.342864,
+    "ast_hash": "09f319ba106cef3848e544897416909d",
+    "semantic_hash": ""
+  },
+  "tests/test_mixed_subtitles.py": {
+    "mtime": 1790240477.7530425,
+    "seen": 1790240569.4655995,
+    "ast_hash": "d5bcb2e10ebcceb481f0d2b07b08e0bb",
+    "semantic_hash": ""
+  },
+  "tests/test_subtitle_sync.py": {
+    "mtime": 1790326173.242613,
+    "seen": 1790340005.855558,
+    "ast_hash": "c3228384ae4f090abfd0dac3ccbbcbf1",
+    "semantic_hash": ""
+  },
+  "tests/test_vertical_export.py": {
+    "mtime": 1790310769.5269585,
+    "seen": 1790321135.1840093,
+    "ast_hash": "49df474d84d7f2a9194ff70d0eea1b98",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-24 154521.png": {
+    "mtime": 1790244921.9885602,
+    "seen": 1790321135.1840093,
+    "ast_hash": "fa4a45aa2f2c5502fb152be21866cf47",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-24 154528.png": {
+    "mtime": 1790244928.563939,
+    "seen": 1790321135.1840093,
+    "ast_hash": "8e389a4c176f88d87e27c9046d051111",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-24 154617.png": {
+    "mtime": 1790244978.0216599,
+    "seen": 1790321135.1840093,
+    "ast_hash": "52034741ef917747dfc5b1d8d8f817ab",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-24 154626.png": {
+    "mtime": 1790244987.1900187,
+    "seen": 1790321135.1840093,
+    "ast_hash": "d79976e9b216af78ad13a10dc2b92694",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-24 154635.png": {
+    "mtime": 1790244996.1667533,
+    "seen": 1790321135.1840093,
+    "ast_hash": "10c24ed107f03938438840d874a877e0",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-24 154657.png": {
+    "mtime": 1790245017.912761,
+    "seen": 1790321135.1840093,
+    "ast_hash": "4436bc1732a8097b33297c9c5c99ed8a",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-24 154709.png": {
+    "mtime": 1790245029.796072,
+    "seen": 1790321135.1840093,
+    "ast_hash": "e8e9b520901c788acfa3312247ffac07",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-25 095444.png": {
+    "mtime": 1790310284.386004,
+    "seen": 1790321135.1840093,
+    "ast_hash": "46ff5f707bc3783ba867c2be08835833",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-25 112852.png": {
+    "mtime": 1790315932.3400986,
+    "seen": 1790321135.1840093,
+    "ast_hash": "465246af89b4c6e368eb2c6255313c9b",
+    "semantic_hash": ""
+  },
+  "downloads/Call of The Night - Opening _ 4K _ 60FPS _ Creditless _.mp4": {
+    "mtime": 1790318954.9693446,
+    "seen": 1790321135.1840093,
+    "ast_hash": "25aaf13b17277683e3e2f944850747b4",
+    "semantic_hash": ""
+  },
+  "downloads/Call of The Night - Opening _ 4K _ 60FPS _ Creditless __h264.mp4": {
+    "mtime": 1790318973.5277927,
+    "seen": 1790321135.1840093,
+    "ast_hash": "4a47094e955f45c1927e80720dacbd78",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-25 180054.png": {
+    "mtime": 1790339454.72191,
+    "seen": 1790340005.8560567,
+    "ast_hash": "6858a41de3a3c46855da90e8812c2ae1",
+    "semantic_hash": ""
+  },
+  "downloads/\u300e\u846c\u9001\u306e\u30d5\u30ea\u30fc\u30ec\u30f3\u300f\u30ce\u30f3\u30af\u30ec\u30b8\u30c3\u30c8OP(\u7b2c1\u30af\u30fc\u30eb)\uff0fOP\u30c6\u30fc\u30de\uff1aYOASOBI\u300c\u52c7\u8005\u300d.mp4": {
+    "mtime": 1790337736.4534557,
+    "seen": 1790340005.8560567,
+    "ast_hash": "eff43e4c5d518d39a5190f9a9a9d447e",
+    "semantic_hash": ""
+  },
+  "downloads/\u300e\u846c\u9001\u306e\u30d5\u30ea\u30fc\u30ec\u30f3\u300f\u30ce\u30f3\u30af\u30ec\u30b8\u30c3\u30c8OP(\u7b2c1\u30af\u30fc\u30eb)\uff0fOP\u30c6\u30fc\u30de\uff1aYOASOBI\u300c\u52c7\u8005\u300d_h264.mp4": {
+    "mtime": 1790337746.7450066,
+    "seen": 1790340005.8560567,
+    "ast_hash": "ca1acf8bca9813b1c99330bcfa232fc2",
+    "semantic_hash": ""
+  },
+  "templates/viral_creator.json": {
+    "mtime": 1790401104.6763923,
+    "seen": 1790405759.0600898,
+    "ast_hash": "897cb941dcb52711bf791a30611f8de1",
+    "semantic_hash": ""
+  },
+  "tests/test_separate_watermark_badge.py": {
+    "mtime": 1790406276.6519394,
+    "seen": 1790406340.87543,
+    "ast_hash": "befb575ccd04da9cd4e1a21957c43199",
+    "semantic_hash": ""
+  },
+  "tests/test_watermark_toggle_resize.py": {
+    "mtime": 1790405711.080891,
+    "seen": 1790405759.0600898,
+    "ast_hash": "307b47da3a02996b732d73caa115657a",
+    "semantic_hash": ""
+  },
+  "app/static/creator_avatar.png": {
+    "mtime": 1790401359.3585792,
+    "seen": 1790405759.060623,
+    "ast_hash": "4c769a04d2f073b1837f900fff666b10",
+    "semantic_hash": ""
+  },
+  "app/video/creator_avatar.png": {
+    "mtime": 1790401359.3585792,
+    "seen": 1790405759.060623,
+    "ast_hash": "4c769a04d2f073b1837f900fff666b10",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-26 110013.png": {
+    "mtime": 1790400613.3748908,
+    "seen": 1790405759.060623,
+    "ast_hash": "cb70f6874d34e4fa9f1a1779f84b3ace",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-26 110405.png": {
+    "mtime": 1790400845.6984308,
+    "seen": 1790405759.060623,
+    "ast_hash": "13726815353234f0dc43c4ef90791ec1",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-26 110516.png": {
+    "mtime": 1790400917.0039742,
+    "seen": 1790405759.060623,
+    "ast_hash": "65a24811f4f02555ba37478091338cac",
+    "semantic_hash": ""
+  },
+  "downloads/BOCCHI THE ROCK! _ Ep #08 Insert _ _That Band_ (\u3042\u306e\u30d0\u30f3\u30c9) by Kessoku Band (English subtitles).mp4": {
+    "mtime": 1790359539.7063076,
+    "seen": 1790405759.060623,
+    "ast_hash": "350c2234556c947dcbbff3c85e72bebf",
+    "semantic_hash": ""
+  },
+  "downloads/BOCCHI THE ROCK! _ Ep #08 Insert _ _That Band_ (\u3042\u306e\u30d0\u30f3\u30c9) by Kessoku Band (English subtitles)_h264.mp4": {
+    "mtime": 1790359552.3120704,
+    "seen": 1790405759.060623,
+    "ast_hash": "aa576bd1384883b9f00c8c7269c49bcf",
+    "semantic_hash": ""
+  },
+  "downloads/Fire Force - Opening 1 \u3010Inferno\u3011 4K _ UHD Creditless _ CC.mp4": {
+    "mtime": 1790400018.0882735,
+    "seen": 1790405759.060623,
+    "ast_hash": "aba35fb01c2b8b164f7ca302752c8e56",
+    "semantic_hash": ""
+  },
+  "downloads/Fire Force - Opening 1 \u3010Inferno\u3011 4K _ UHD Creditless _ CC_h264.mp4": {
+    "mtime": 1790400024.4911294,
+    "seen": 1790405759.060623,
+    "ast_hash": "50504c34778a325456b1c0c42162a2cb",
+    "semantic_hash": ""
+  },
+  "downloads/Jujutsu Kaisen - Opening 3 \u3010Ao No Sumika\u3011 4K 60FPS Creditless _ CC.mp4": {
+    "mtime": 1790346581.7091155,
+    "seen": 1790405759.060623,
+    "ast_hash": "5f9362dd30bbb683c720c04e8ed7253e",
+    "semantic_hash": ""
+  },
+  "downloads/Jujutsu Kaisen - Opening 3 \u3010Ao No Sumika\u3011 4K 60FPS Creditless _ CC_h264.mp4": {
+    "mtime": 1790346602.1637156,
+    "seen": 1790405759.060623,
+    "ast_hash": "41207d5307167db38211106eea0dcbf4",
+    "semantic_hash": ""
+  },
+  "ss to fix/Screenshot 2026-09-26 122817.png": {
+    "mtime": 1790405898.6542523,
+    "seen": 1790406340.87543,
+    "ast_hash": "521f660b8296acc844940cb1933bf2d8",
+    "semantic_hash": ""
+  }
+}

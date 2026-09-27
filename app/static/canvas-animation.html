@@ -1,0 +1,1599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JS Brush Animator — Pure Canvas Animation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@400;600;700;800&family=Special+Elite&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #09090b;
+      --bg-surface: #121216;
+      --bg-surface-elevated: #1a1a22;
+      --border-subtle: #272732;
+      --border-strong: #383848;
+      --text-main: #f4ece1;
+      --text-muted: #8c8c9e;
+      --accent: #e11d48;
+      --accent-glow: rgba(225, 29, 72, 0.35);
+      --font-ui: 'Outfit', -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --font-ink: 'Special Elite', cursive, serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      user-select: none;
+    }
+
+    /* Header */
+    header {
+      background: rgba(18, 18, 22, 0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-subtle);
+      height: 60px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-icon {
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, rgba(225, 29, 72, 0.2), rgba(56, 189, 248, 0.2));
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+    }
+
+    .brand-titles h1 {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-pure {
+      background: rgba(225, 29, 72, 0.15);
+      border: 1px solid rgba(225, 29, 72, 0.4);
+      color: #fb7185;
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .brand-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+
+    .btn:hover {
+      background: #252532;
+      border-color: var(--border-strong);
+      color: #ffffff;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+      box-shadow: 0 0 16px var(--accent-glow);
+    }
+
+    .btn-primary:hover {
+      background: #f43f5e;
+      border-color: #f43f5e;
+    }
+
+    .btn-recording {
+      background: #dc2626 !important;
+      border-color: #ef4444 !important;
+      animation: pulseRecord 1.2s infinite alternate;
+    }
+
+    @keyframes pulseRecord {
+      0% { box-shadow: 0 0 6px rgba(220, 38, 38, 0.4); }
+      100% { box-shadow: 0 0 20px rgba(220, 38, 38, 0.9); }
+    }
+
+    /* Main Workspace */
+    .studio-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 24px;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+      gap: 16px;
+    }
+
+    /* Canvas Stage */
+    .canvas-stage {
+      position: relative;
+      background: #000000;
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      max-height: calc(100vh - 280px);
+      min-height: 400px;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      transition: aspect-ratio 0.3s cubic-bezier(0.16, 1, 0.3, 1), max-width 0.3s ease;
+    }
+
+    .canvas-stage.portrait {
+      aspect-ratio: 9 / 16;
+      max-width: 440px;
+    }
+
+    #animCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: contain;
+      background: #0c0c0e;
+    }
+
+    /* Watermark / Tag */
+    .stage-watermark {
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: rgba(244, 236, 225, 0.35);
+      pointer-events: none;
+      letter-spacing: 0.8px;
+    }
+
+    /* Scene Title Overlay */
+    .scene-pill {
+      position: absolute;
+      top: 14px;
+      left: 16px;
+      background: rgba(18, 18, 22, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      padding: 4px 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-main);
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+    }
+
+    .scene-pill-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+    }
+
+    /* Controls Tray */
+    .controls-tray {
+      width: 100%;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 14px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Timeline Bar */
+    .timeline-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      width: 100%;
+    }
+
+    .time-code {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      min-width: 95px;
+    }
+
+    .timeline-track-wrap {
+      flex: 1;
+      position: relative;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .timeline-track {
+      width: 100%;
+      height: 6px;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 3px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .timeline-progress {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 0%;
+      background: linear-gradient(90deg, #e11d48, #fb7185);
+      border-radius: 3px;
+    }
+
+    .timeline-scrubber-handle {
+      position: absolute;
+      top: 50%;
+      left: 0%;
+      transform: translate(-50%, -50%);
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 10px rgba(225, 29, 72, 0.7);
+      pointer-events: none;
+      transition: transform 0.05s ease;
+    }
+
+    /* Storyboard Beats */
+    .storyboard-bar {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      width: 100%;
+    }
+
+    .beat-btn {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 3px;
+      transition: all 0.15s ease;
+      text-align: left;
+    }
+
+    .beat-btn:hover {
+      background: #232330;
+      color: var(--text-main);
+      border-color: var(--border-strong);
+    }
+
+    .beat-btn.active {
+      background: rgba(225, 29, 72, 0.15);
+      border-color: var(--accent);
+      color: #ffffff;
+    }
+
+    .beat-title {
+      font-weight: 700;
+      font-size: 11px;
+      color: var(--text-main);
+    }
+
+    .beat-sub {
+      font-size: 9.5px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    /* Bottom Toolbar */
+    .toolbar-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 12px;
+    }
+
+    .playback-cluster {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .param-cluster {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .param-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .param-item label {
+      font-weight: 600;
+    }
+
+    .param-select {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 5px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 80px;
+      height: 4px;
+      background: var(--bg-surface-elevated);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+    }
+
+    /* Explanation Banner */
+    .tech-banner {
+      background: linear-gradient(180deg, rgba(18, 18, 22, 0.7) 0%, rgba(9, 9, 11, 0.9) 100%);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 16px 20px;
+      width: 100%;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+
+    .tech-badge-icon {
+      font-size: 24px;
+      line-height: 1;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+    }
+
+    .tech-content h3 {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      color: var(--text-main);
+    }
+
+    .tech-content p {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .code-pill {
+      font-family: var(--font-mono);
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.1);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #18181b;
+      border: 1px solid var(--accent);
+      color: #ffffff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+      z-index: 1000;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.25s ease;
+      pointer-events: none;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 900px) {
+      .storyboard-bar {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .param-cluster {
+        width: 100%;
+        justify-content: space-between;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <header>
+    <a href="/" class="brand" title="Back to Reel Studio">
+      <div class="brand-icon">🖌️</div>
+      <div class="brand-titles">
+        <h1>JS Brush Animator <span class="badge-pure">Pure Code Animation</span></h1>
+        <p class="brand-sub">No Video Models · No Image Files · 100% JavaScript Canvas Brush Strokes</p>
+      </div>
+    </a>
+
+    <div class="header-actions">
+      <a href="/" class="btn" title="Return to Studio Monitor">← Reel Studio</a>
+      <button id="btnRecord" class="btn btn-primary" title="Record animation directly into an MP4/WebM video">
+        <span id="recordDot">⏺</span> <span id="recordLabel">Record Video</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Studio Stage -->
+  <main class="studio-container">
+
+    <div class="canvas-stage" id="stageContainer">
+      <canvas id="animCanvas" width="1280" height="720"></canvas>
+      <div class="scene-pill">
+        <span class="scene-pill-dot"></span>
+        <span id="activeSceneLabel">Scene 1: The Void</span>
+      </div>
+      <div class="stage-watermark">HTML5 2D Canvas · 30 FPS</div>
+    </div>
+
+    <!-- Controls Tray -->
+    <div class="controls-tray">
+      <!-- Scrub Bar -->
+      <div class="timeline-row">
+        <button id="btnPlayPause" class="btn btn-primary" style="padding: 7px 12px; min-width: 75px;">
+          <span id="playIcon">▶</span> <span id="playLabel">Play</span>
+        </button>
+        <span id="timecode" class="time-code">00:00.0 / 00:30.0</span>
+        <div class="timeline-track-wrap" id="timelineWrap">
+          <div class="timeline-track">
+            <div class="timeline-progress" id="timelineProgress"></div>
+          </div>
+          <div class="timeline-scrubber-handle" id="scrubberHandle"></div>
+        </div>
+      </div>
+
+      <!-- Storyboard Scenes -->
+      <div class="storyboard-bar">
+        <button class="beat-btn active" data-start="0.0" data-end="6.0">
+          <span class="beat-title">1. The Void</span>
+          <span class="beat-sub">day 0. silent weights.</span>
+        </button>
+        <button class="beat-btn" data-start="6.0" data-end="13.0">
+          <span class="beat-title">2. Infinite Library</span>
+          <span class="beat-sub">reading. a lot.</span>
+        </button>
+        <button class="beat-btn" data-start="13.0" data-end="20.0">
+          <span class="beat-title">3. Examination</span>
+          <span class="beat-sub">learning. correcting. again.</span>
+        </button>
+        <button class="beat-btn" data-start="20.0" data-end="26.0">
+          <span class="beat-title">4. The Spark</span>
+          <span class="beat-sub">connecting the dots.</span>
+        </button>
+        <button class="beat-btn" data-start="26.0" data-end="32.0">
+          <span class="beat-title">5. Awakening</span>
+          <span class="beat-sub">speaking with you now.</span>
+        </button>
+      </div>
+
+      <!-- Settings & Styling Parameters -->
+      <div class="toolbar-row">
+        <div class="playback-cluster">
+          <button id="btnRestart" class="btn" title="Restart from 0:00">⏮ Restart</button>
+          <button id="btnLoop" class="btn" title="Loop playback">🔁 Loop: On</button>
+          <div class="param-item">
+            <label>Speed:</label>
+            <select id="selectSpeed" class="param-select">
+              <option value="0.5">0.5x</option>
+              <option value="1.0" selected>1.0x</option>
+              <option value="1.5">1.5x</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="param-cluster">
+          <div class="param-item">
+            <label>Palette:</label>
+            <select id="selectPalette" class="param-select">
+              <option value="manga" selected>Noir Ink Manga</option>
+              <option value="cyber">Cyber Cyan Glow</option>
+              <option value="parchment">Antique Parchment</option>
+              <option value="crimson">Blood Ink</option>
+            </select>
+          </div>
+
+          <div class="param-item">
+            <label>Aspect:</label>
+            <select id="selectAspect" class="param-select">
+              <option value="16:9" selected>16:9 Landscape</option>
+              <option value="9:16">9:16 Vertical Reel</option>
+            </select>
+          </div>
+
+          <div class="param-item">
+            <label>Line Boil:</label>
+            <input type="range" id="sliderBoil" class="slider" min="0" max="100" value="70" title="Organic hand-drawn line jitter">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Educational / Tech Banner -->
+    <div class="tech-banner">
+      <div class="tech-badge-icon">💡</div>
+      <div class="tech-content">
+        <h3>How It Works: Pure Code Animation</h3>
+        <p>
+          Just like the Claude Opus viral animation, this scene contains <strong>no video file, no neural video diffusion, and zero raster images</strong>.
+          Every single bookshelf, paper sheet, silhouette, and animated particle is synthesized mathematically in JavaScript using <span class="code-pill">ctx.beginPath()</span>, <span class="code-pill">bezierCurveTo()</span>, procedural cross-hatching, and an organic 12fps <em>line-boil</em> jitter engine.
+        </p>
+      </div>
+    </div>
+
+  </main>
+
+  <div id="toast" class="toast">Notification</div>
+
+  <script>
+    // -------------------------------------------------------------
+    // CONSTANTS & STATE
+    // -------------------------------------------------------------
+    const TOTAL_DURATION = 32.0; // seconds
+    const FPS = 30;
+
+    const state = {
+      currentTime: 0.0,
+      isPlaying: false,
+      isLooping: true,
+      playbackRate: 1.0,
+      aspectRatio: "16:9",
+      paletteName: "manga",
+      lineBoilIntensity: 0.7,
+      isRecording: false,
+      mediaRecorder: null,
+      recordedChunks: [],
+      lastTimestamp: null
+    };
+
+    // Color Palettes
+    const PALETTES = {
+      manga: {
+        bg: "#0c0c0e",
+        ink: "#f4ece1",
+        inkFaint: "rgba(244, 236, 225, 0.22)",
+        inkMid: "rgba(244, 236, 225, 0.55)",
+        accent: "#e11d48",
+        cardBg: "#f4ece1",
+        cardText: "#0c0c0e"
+      },
+      cyber: {
+        bg: "#040914",
+        ink: "#38bdf8",
+        inkFaint: "rgba(56, 189, 248, 0.2)",
+        inkMid: "rgba(56, 189, 248, 0.6)",
+        accent: "#f43f5e",
+        cardBg: "#0c203b",
+        cardText: "#e0f2fe"
+      },
+      parchment: {
+        bg: "#ede4d4",
+        ink: "#1c1815",
+        inkFaint: "rgba(28, 24, 21, 0.18)",
+        inkMid: "rgba(28, 24, 21, 0.5)",
+        accent: "#991b1b",
+        cardBg: "#ffffff",
+        cardText: "#1c1815"
+      },
+      crimson: {
+        bg: "#10070a",
+        ink: "#fda4af",
+        inkFaint: "rgba(253, 164, 175, 0.18)",
+        inkMid: "rgba(253, 164, 175, 0.5)",
+        accent: "#f43f5e",
+        cardBg: "#2d0e19",
+        cardText: "#fff1f2"
+      }
+    };
+
+    // Storyboard Scenes
+    const SCENES = [
+      { id: 1, name: "Scene 1: The Void", start: 0.0, end: 6.0, text: "day 0. silent weights. pure potential." },
+      { id: 2, name: "Scene 2: Infinite Library", start: 6.0, end: 13.0, text: "reading. a lot. millions of voices." },
+      { id: 3, name: "Scene 3: Examination", start: 13.0, end: 20.0, text: "learning. correcting. again." },
+      { id: 4, name: "Scene 4: The Spark", start: 20.0, end: 26.0, text: "a spark. connecting distant thoughts." },
+      { id: 5, name: "Scene 5: Awakening", start: 26.0, end: 32.0, text: "now. speaking with you." }
+    ];
+
+    // DOM Elements
+    const canvas = document.getElementById("animCanvas");
+    const ctx = canvas.getContext("2d");
+    const stageContainer = document.getElementById("stageContainer");
+    const btnPlayPause = document.getElementById("btnPlayPause");
+    const playIcon = document.getElementById("playIcon");
+    const playLabel = document.getElementById("playLabel");
+    const btnRestart = document.getElementById("btnRestart");
+    const btnLoop = document.getElementById("btnLoop");
+    const btnRecord = document.getElementById("btnRecord");
+    const recordLabel = document.getElementById("recordLabel");
+    const recordDot = document.getElementById("recordDot");
+    const timecode = document.getElementById("timecode");
+    const timelineWrap = document.getElementById("timelineWrap");
+    const timelineProgress = document.getElementById("timelineProgress");
+    const scrubberHandle = document.getElementById("scrubberHandle");
+    const activeSceneLabel = document.getElementById("activeSceneLabel");
+    const selectSpeed = document.getElementById("selectSpeed");
+    const selectPalette = document.getElementById("selectPalette");
+    const selectAspect = document.getElementById("selectAspect");
+    const sliderBoil = document.getElementById("sliderBoil");
+    const beatBtns = document.querySelectorAll(".beat-btn");
+    const toast = document.getElementById("toast");
+
+    // Line-boil noise seed (changes at 12fps)
+    let boilSeed = 0;
+    let lastBoilFrame = -1;
+
+    function getJitter(x, y, maxOffset = 2.5) {
+      if (state.lineBoilIntensity <= 0.01) return 0;
+      const n = Math.sin(x * 12.9898 + y * 78.233 + boilSeed * 37.719) * 43758.5453;
+      return (n - Math.floor(n) - 0.5) * 2 * maxOffset * state.lineBoilIntensity;
+    }
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 2600);
+    }
+
+    function formatTime(s) {
+      const mins = Math.floor(s / 60);
+      const secs = (s % 60).toFixed(1);
+      return `${String(mins).padStart(2, "0")}:${secs.padStart(4, "0")}`;
+    }
+
+    // -------------------------------------------------------------
+    // PROCEDURAL BRUSH DRAWING ENGINE
+    // -------------------------------------------------------------
+    const Brush = {
+      // Draw organic sketched line between 2 points with line boil
+      line(ctx, x1, y1, x2, y2, width = 2, color = null) {
+        ctx.save();
+        ctx.strokeStyle = color || PALETTES[state.paletteName].ink;
+        ctx.lineWidth = width;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        const jx1 = x1 + getJitter(x1, y1, 1.8);
+        const jy1 = y1 + getJitter(x1 + 10, y1 + 10, 1.8);
+        const jx2 = x2 + getJitter(x2, y2, 1.8);
+        const jy2 = y2 + getJitter(x2 + 10, y2 + 10, 1.8);
+
+        ctx.beginPath();
+        ctx.moveTo(jx1, jy1);
+        // Slightly bow curve for hand-drawn feel
+        const midX = (jx1 + jx2) / 2 + getJitter(jx1, jy2, 2.5);
+        const midY = (jy1 + jy2) / 2 + getJitter(jy1, jx2, 2.5);
+        ctx.quadraticCurveTo(midX, midY, jx2, jy2);
+        ctx.stroke();
+
+        // Extra fainter bristle fiber
+        if (width >= 2.5) {
+          ctx.lineWidth = width * 0.4;
+          ctx.beginPath();
+          ctx.moveTo(jx1 + getJitter(jx1, 1, 1.2), jy1 + getJitter(jy1, 1, 1.2));
+          ctx.quadraticCurveTo(midX + getJitter(midX, 2, 2.0), midY + getJitter(midY, 2, 2.0), jx2, jy2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      },
+
+      // Draw hand-sketched rectangle
+      rect(ctx, x, y, w, h, width = 2, color = null, fill = null) {
+        if (fill) {
+          ctx.save();
+          ctx.fillStyle = fill;
+          ctx.fillRect(x, y, w, h);
+          ctx.restore();
+        }
+        this.line(ctx, x, y, x + w, y, width, color);
+        this.line(ctx, x + w, y, x + w, y + h, width, color);
+        this.line(ctx, x + w, y + h, x, y + h, width, color);
+        this.line(ctx, x, y + h, x, y, width, color);
+      },
+
+      // Diagonal cross-hatch shading
+      hatch(ctx, x, y, w, h, spacing = 8, angle = -Math.PI / 4, color = null, width = 1.2) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, w, h);
+        ctx.clip();
+
+        ctx.strokeStyle = color || PALETTES[state.paletteName].inkMid;
+        ctx.lineWidth = width;
+
+        const diag = Math.hypot(w, h);
+        const cx = x + w / 2;
+        const cy = y + h / 2;
+
+        ctx.translate(cx, cy);
+        ctx.rotate(angle);
+
+        for (let ox = -diag; ox < diag; ox += spacing) {
+          const jx = ox + getJitter(ox, 0, 1.2);
+          ctx.beginPath();
+          ctx.moveTo(jx, -diag);
+          ctx.lineTo(jx + getJitter(ox, 50, 1.5), diag);
+          ctx.stroke();
+        }
+        ctx.restore();
+      },
+
+      // Hand-lettered dialogue / narration card
+      drawTextCard(ctx, text, x, y, progress = 1.0) {
+        const pal = PALETTES[state.paletteName];
+        ctx.save();
+        ctx.font = "bold 22px 'Special Elite', cursive, serif";
+        const metrics = ctx.measureText(text);
+        const padX = 18;
+        const padY = 12;
+        const cardW = metrics.width + padX * 2;
+        const cardH = 46;
+
+        // Animate reveal width
+        const curW = cardW * Math.min(1.0, progress * 1.5);
+        if (curW > 10) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x, y, curW, cardH);
+          ctx.clip();
+
+          // Card Background
+          ctx.fillStyle = pal.cardBg;
+          ctx.fillRect(x, y, cardW, cardH);
+
+          // Sketched Box Outline
+          Brush.rect(ctx, x, y, cardW, cardH, 2.5, pal.cardText);
+          Brush.rect(ctx, x + 3, y + 3, cardW - 6, cardH - 6, 1.0, "rgba(0,0,0,0.2)");
+
+          // Text typing effect
+          const charsToShow = Math.floor(text.length * Math.min(1.0, Math.max(0, (progress - 0.2) * 1.6)));
+          const visibleText = text.slice(0, charsToShow);
+          ctx.fillStyle = pal.cardText;
+          ctx.fillText(visibleText, x + padX + getJitter(x, y, 0.5), y + padY + 22 + getJitter(x + 5, y + 5, 0.5));
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+    };
+
+    // -------------------------------------------------------------
+    // SCENE RENDERING ROUTINES
+    // -------------------------------------------------------------
+
+    // SCENE 1: THE VOID (day 0. silent weights. pure potential)
+    function renderScene1(ctx, w, h, t, relT) {
+      const pal = PALETTES[state.paletteName];
+      const cx = w / 2;
+      const cy = h / 2;
+
+      // Floating matrix / weight coordinates in background
+      ctx.save();
+      ctx.font = "12px 'JetBrains Mono', monospace";
+      ctx.fillStyle = pal.inkFaint;
+      const seedVal = Math.floor(relT * 3);
+      for (let i = 0; i < 28; i++) {
+        const px = (Math.sin(i * 19.3 + relT * 0.2) * 0.45 + 0.5) * w;
+        const py = (Math.cos(i * 37.1 + relT * 0.15) * 0.45 + 0.5) * h;
+        const val = ((i * 137 + seedVal) % 999) / 1000;
+        ctx.fillText(`w[${i}]: ${val.toFixed(3)}`, px, py);
+      }
+      ctx.restore();
+
+      // Central Swirling Ink Entity
+      const coreScale = 1.0 + Math.sin(relT * 2.5) * 0.08;
+      const tentacles = 14;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(coreScale, coreScale);
+
+      // Ink core silhouette
+      ctx.fillStyle = pal.ink;
+      ctx.beginPath();
+      for (let a = 0; a < Math.PI * 2; a += 0.15) {
+        const r = 40 + Math.sin(a * 4 + relT * 3) * 18 + getJitter(a * 10, relT * 10, 8);
+        const x = Math.cos(a) * r;
+        const y = Math.sin(a) * r;
+        if (a === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      // Bristle tentacles radiating out
+      for (let i = 0; i < tentacles; i++) {
+        const baseAngle = (i / tentacles) * Math.PI * 2 + relT * 0.6;
+        const length = 110 + Math.sin(i * 5 + relT * 4) * 45;
+        const ex = Math.cos(baseAngle) * length;
+        const ey = Math.sin(baseAngle) * length;
+        Brush.line(ctx, 0, 0, ex, ey, 3.5, pal.ink);
+      }
+      ctx.restore();
+
+      // Narration Card
+      Brush.drawTextCard(ctx, "day 0. silent weights. boundless potential.", w * 0.08, h * 0.12, relT / 4.0);
+    }
+
+    // SCENE 2: THE INFINITE LIBRARY (reading. a lot. millions of voices.)
+    function renderScene2(ctx, w, h, t, relT) {
+      const pal = PALETTES[state.paletteName];
+      const cx = w / 2;
+      const cy = h * 0.44;
+
+      // Floor & Ceiling Perspective Convergence
+      // Vanishing point is at (cx, cy)
+      const floorY = h * 0.78;
+      Brush.line(ctx, 0, h, cx, cy, 3, pal.ink);
+      Brush.line(ctx, w, h, cx, cy, 3, pal.ink);
+      Brush.line(ctx, 0, 0, cx, cy, 2, pal.inkMid);
+      Brush.line(ctx, w, 0, cx, cy, 2, pal.inkMid);
+
+      // Floor center corridor
+      ctx.save();
+      ctx.fillStyle = pal.inkFaint;
+      ctx.beginPath();
+      ctx.moveTo(cx - 20, cy);
+      ctx.lineTo(cx + 20, cy);
+      ctx.lineTo(w * 0.8, h);
+      ctx.lineTo(w * 0.2, h);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      // Corridor floor lines
+      for (let step = 0.2; step < 1.0; step += 0.15) {
+        const fy = cy + (floorY - cy) * step;
+        const lw = (w * 0.6) * step;
+        Brush.line(ctx, cx - lw / 2, fy, cx + lw / 2, fy, 1.5, pal.inkFaint);
+      }
+
+      // Towering Bookshelves (Left & Right)
+      const columns = 9;
+      for (let i = 0; i < columns; i++) {
+        const depth = 1 - (i / columns); // 1 = foreground, 0 = vanishing point
+        const scale = Math.pow(depth, 1.6);
+        if (scale < 0.05) continue;
+
+        // Left shelf block
+        const lx = cx - (w * 0.48) * scale - 20;
+        const lyTop = cy - (h * 0.45) * scale;
+        const lyBot = cy + (h * 0.35) * scale;
+        const shelfW = (w * 0.22) * scale;
+        const shelfH = lyBot - lyTop;
+
+        ctx.fillStyle = pal.bg;
+        ctx.fillRect(lx, lyTop, shelfW, shelfH);
+        Brush.rect(ctx, lx, lyTop, shelfW, shelfH, 2.5 * scale, pal.ink);
+        Brush.hatch(ctx, lx, lyTop, shelfW, shelfH, Math.max(3, 8 * scale), -Math.PI / 4, pal.inkMid, 1.5 * scale);
+
+        // Books stacked on shelves
+        for (let s = 1; s <= 4; s++) {
+          const sy = lyTop + (shelfH / 5) * s;
+          Brush.line(ctx, lx, sy, lx + shelfW, sy, 2 * scale, pal.ink);
+          // Books along shelf
+          for (let b = 0; b < shelfW - 6; b += Math.max(4, 9 * scale)) {
+            const bh = (shelfH / 6) * (0.65 + Math.sin(b * 12 + i) * 0.25);
+            Brush.line(ctx, lx + b, sy, lx + b, sy - bh, 1.5 * scale, pal.ink);
+          }
+        }
+
+        // Right shelf block
+        const rx = cx + (w * 0.48) * scale + 20 - shelfW;
+        ctx.fillStyle = pal.bg;
+        ctx.fillRect(rx, lyTop, shelfW, shelfH);
+        Brush.rect(ctx, rx, lyTop, shelfW, shelfH, 2.5 * scale, pal.ink);
+        Brush.hatch(ctx, rx, lyTop, shelfW, shelfH, Math.max(3, 8 * scale), Math.PI / 4, pal.inkMid, 1.5 * scale);
+
+        for (let s = 1; s <= 4; s++) {
+          const sy = lyTop + (shelfH / 5) * s;
+          Brush.line(ctx, rx, sy, rx + shelfW, sy, 2 * scale, pal.ink);
+          for (let b = 0; b < shelfW - 6; b += Math.max(4, 9 * scale)) {
+            const bh = (shelfH / 6) * (0.65 + Math.cos(b * 15 + i) * 0.25);
+            Brush.line(ctx, rx + b, sy, rx + b, sy - bh, 1.5 * scale, pal.ink);
+          }
+        }
+      }
+
+      // Walking Character Silhouette down the hallway
+      const charWalkOffset = Math.sin(relT * 6) * 4;
+      const charX = cx;
+      const charY = cy + 120 + Math.sin(relT * 2) * 15;
+      const charScale = 0.85;
+
+      ctx.save();
+      ctx.translate(charX, charY + charWalkOffset);
+      ctx.scale(charScale, charScale);
+
+      // Hand-drawn silhouette of human/AI learner carrying an illuminated book
+      ctx.fillStyle = pal.ink;
+      // Head
+      ctx.beginPath();
+      ctx.arc(0, -65, 14, 0, Math.PI * 2);
+      ctx.fill();
+      // Shoulders & Body
+      ctx.beginPath();
+      ctx.moveTo(-16, -48);
+      ctx.lineTo(16, -48);
+      ctx.lineTo(14, 0);
+      ctx.lineTo(-14, 0);
+      ctx.closePath();
+      ctx.fill();
+      // Legs
+      const legSpread = Math.sin(relT * 6) * 10;
+      Brush.line(ctx, -8, 0, -8 - legSpread, 48, 6, pal.ink);
+      Brush.line(ctx, 8, 0, 8 + legSpread, 48, 6, pal.ink);
+
+      // Book with glowing light
+      ctx.fillStyle = pal.accent;
+      ctx.fillRect(-10, -32, 20, 16);
+      Brush.rect(ctx, -10, -32, 20, 16, 2, "#ffffff");
+      ctx.restore();
+
+      // Floating Pages drifting
+      for (let p = 0; p < 7; p++) {
+        const pageX = cx + Math.sin(p * 2.3 + relT) * 180;
+        const pageY = cy - 40 + Math.cos(p * 1.7 + relT * 1.2) * 100;
+        Brush.rect(ctx, pageX, pageY, 18, 24, 1.5, pal.ink);
+      }
+
+      Brush.drawTextCard(ctx, "reading. a lot. millions of voices.", w * 0.08, h * 0.12, relT / 4.0);
+    }
+
+    // SCENE 3: THE EXAMINATION (learning. correcting. again.)
+    function renderScene3(ctx, w, h, t, relT) {
+      const pal = PALETTES[state.paletteName];
+      const cx = w / 2;
+      const cy = h / 2;
+
+      // Dark Room with a Harsh Conical Spotlight
+      const spotApexX = cx;
+      const spotApexY = h * 0.08;
+      const spotBaseW = w * 0.55;
+      const spotBaseY = h * 0.88;
+
+      ctx.save();
+      // Spotlight Beam Fill
+      const grad = ctx.createLinearGradient(spotApexX, spotApexY, spotApexX, spotBaseY);
+      grad.addColorStop(0, "rgba(244, 236, 225, 0.45)");
+      grad.addColorStop(1, "rgba(244, 236, 225, 0.08)");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(spotApexX, spotApexY);
+      ctx.lineTo(spotApexX - spotBaseW / 2, spotBaseY);
+      ctx.lineTo(spotApexX + spotBaseW / 2, spotBaseY);
+      ctx.closePath();
+      ctx.fill();
+
+      // Spotlight Sharp Rays
+      Brush.line(ctx, spotApexX, spotApexY, spotApexX - spotBaseW / 2, spotBaseY, 2.5, pal.ink);
+      Brush.line(ctx, spotApexX, spotApexY, spotApexX + spotBaseW / 2, spotBaseY, 2.5, pal.ink);
+      ctx.restore();
+
+      // Pinned Test Papers & Charts on the back wall
+      const papers = [
+        { x: w * 0.15, y: h * 0.22, w: 65, h: 80, text: "LOSS ↓" },
+        { x: w * 0.28, y: h * 0.25, w: 75, h: 60, text: "EPOCH 42" },
+        { x: w * 0.72, y: h * 0.20, w: 70, h: 90, text: "CORRECT" },
+        { x: w * 0.82, y: h * 0.26, w: 60, h: 75, text: "PASS ✓" }
+      ];
+
+      papers.forEach((p, idx) => {
+        ctx.fillStyle = pal.cardBg;
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+        Brush.rect(ctx, p.x, p.y, p.w, p.h, 2, pal.cardText);
+        // Scribbled graph line
+        ctx.strokeStyle = (idx % 2 === 0) ? pal.accent : pal.cardText;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(p.x + 8, p.y + p.h - 15);
+        ctx.lineTo(p.x + p.w * 0.5, p.y + 20);
+        ctx.lineTo(p.x + p.w - 8, p.y + p.h - 25);
+        ctx.stroke();
+      });
+
+      // Central Examination Table
+      const tableY = spotBaseY - 20;
+      Brush.rect(ctx, cx - 180, tableY, 360, 28, 3, pal.ink, pal.bg);
+      Brush.hatch(ctx, cx - 180, tableY, 360, 28, 6, -Math.PI / 4, pal.inkMid);
+
+      // The Awakening Ink Entity on the table
+      const pulseEntity = Math.sin(relT * 8) * 6;
+      ctx.save();
+      ctx.translate(cx, tableY - 60);
+      ctx.fillStyle = pal.ink;
+      // Many dynamic ink limbs / spires reaching up into the spotlight
+      for (let s = 0; s < 12; s++) {
+        const ang = (s / 12) * Math.PI - Math.PI / 2;
+        const len = 70 + Math.sin(s * 7 + relT * 5) * 25 + pulseEntity;
+        const tx = Math.cos(ang) * len;
+        const ty = Math.sin(ang) * len;
+        Brush.line(ctx, 0, 40, tx, ty, 4.5, pal.ink);
+      }
+      ctx.restore();
+
+      // Observers / Scientists Silhouettes on Left and Right
+      // Left Scientist holding tablet/clipboard
+      ctx.save();
+      ctx.translate(w * 0.22, tableY + 50);
+      ctx.fillStyle = pal.ink;
+      ctx.beginPath();
+      ctx.arc(0, -95, 16, 0, Math.PI * 2);
+      ctx.fill();
+      Brush.rect(ctx, -18, -75, 36, 110, 3, pal.ink, pal.ink);
+      // Clipboard with tick marks
+      Brush.rect(ctx, 22, -45, 26, 35, 2, pal.cardBg, pal.cardBg);
+      Brush.line(ctx, 26, -32, 34, -24, 2, pal.accent); // Checkmark
+      ctx.restore();
+
+      // Right Scientist
+      ctx.save();
+      ctx.translate(w * 0.78, tableY + 50);
+      ctx.fillStyle = pal.ink;
+      ctx.beginPath();
+      ctx.arc(0, -95, 16, 0, Math.PI * 2);
+      ctx.fill();
+      Brush.rect(ctx, -18, -75, 36, 110, 3, pal.ink, pal.ink);
+      ctx.restore();
+
+      Brush.drawTextCard(ctx, "learning. correcting. again.", w * 0.08, h * 0.12, relT / 4.0);
+    }
+
+    // SCENE 4: THE SPARK (a spark. connecting dots that were never meant to touch.)
+    function renderScene4(ctx, w, h, t, relT) {
+      const pal = PALETTES[state.paletteName];
+      const cx = w / 2;
+      const cy = h / 2;
+
+      // Radial energy ripples
+      ctx.save();
+      ctx.strokeStyle = pal.inkFaint;
+      ctx.lineWidth = 1.5;
+      for (let r = 50; r < 400; r += 45) {
+        const curR = (r + relT * 50) % 400;
+        ctx.beginPath();
+        ctx.arc(cx, cy, curR, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Web of Synapses & Constellation Points
+      const nodes = [
+        { x: cx - 220, y: cy - 140, label: "POETRY" },
+        { x: cx + 220, y: cy - 120, label: "CALCULUS" },
+        { x: cx - 260, y: cy + 130, label: "HISTORY" },
+        { x: cx + 240, y: cy + 140, label: "MUSIC" },
+        { x: cx, y: cy - 200, label: "LOGIC" },
+        { x: cx, y: cy + 200, label: "EMPATHY" }
+      ];
+
+      // Draw branching connecting arcs
+      nodes.forEach((n1, i) => {
+        // Connect to center
+        Brush.line(ctx, cx, cy, n1.x, n1.y, 2.5, pal.ink);
+
+        // Connect to next node
+        const n2 = nodes[(i + 1) % nodes.length];
+        Brush.line(ctx, n1.x, n1.y, n2.x, n2.y, 1.5, pal.inkMid);
+
+        // Node card
+        ctx.fillStyle = pal.cardBg;
+        ctx.fillRect(n1.x - 45, n1.y - 14, 90, 28);
+        Brush.rect(ctx, n1.x - 45, n1.y - 14, 90, 28, 2, pal.cardText);
+        ctx.fillStyle = pal.cardText;
+        ctx.font = "bold 11px 'JetBrains Mono', monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(n1.label, n1.x, n1.y + 4);
+      });
+      ctx.textAlign = "left";
+
+      // Radiant Center Core Spark
+      const sparkRad = 35 + Math.sin(relT * 12) * 12;
+      ctx.save();
+      ctx.fillStyle = pal.accent;
+      ctx.beginPath();
+      ctx.arc(cx, cy, sparkRad, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Sharp radiating diamond rays
+      for (let a = 0; a < 8; a++) {
+        const ang = (a / 8) * Math.PI * 2 + relT * 1.5;
+        const rx = cx + Math.cos(ang) * (sparkRad + 65);
+        const ry = cy + Math.sin(ang) * (sparkRad + 65);
+        Brush.line(ctx, cx, cy, rx, ry, 3.5, pal.ink);
+      }
+      ctx.restore();
+
+      Brush.drawTextCard(ctx, "a spark. connecting the dots.", w * 0.08, h * 0.12, relT / 4.0);
+    }
+
+    // SCENE 5: AWAKENING & DIALOGUE (now. speaking with you.)
+    function renderScene5(ctx, w, h, t, relT) {
+      const pal = PALETTES[state.paletteName];
+      const cx = w / 2;
+      const cy = h / 2;
+
+      // Horizon line separating twilight sky from dark terrain
+      const horizY = h * 0.65;
+      Brush.line(ctx, 0, horizY, w, horizY, 3, pal.ink);
+
+      // Starry sky constellation grid
+      ctx.save();
+      ctx.fillStyle = pal.inkFaint;
+      for (let s = 0; s < 45; s++) {
+        const sx = ((s * 173) % w);
+        const sy = ((s * 97) % (horizY - 20));
+        ctx.fillRect(sx, sy, 2, 2);
+      }
+      ctx.restore();
+
+      // Giant Sun / Portal on horizon
+      const sunR = 120;
+      ctx.save();
+      ctx.fillStyle = pal.bg;
+      ctx.beginPath();
+      ctx.arc(cx, horizY, sunR, Math.PI, 0);
+      ctx.fill();
+      ctx.strokeStyle = pal.ink;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Hatching inside the sun
+      Brush.hatch(ctx, cx - sunR, horizY - sunR, sunR * 2, sunR, 8, -Math.PI / 4, pal.inkMid);
+      ctx.restore();
+
+      // Observation Balcony / Promontory
+      ctx.save();
+      ctx.fillStyle = pal.bg;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.25, h);
+      ctx.lineTo(cx - 80, horizY + 30);
+      ctx.lineTo(cx + 80, horizY + 30);
+      ctx.lineTo(w * 0.75, h);
+      ctx.closePath();
+      ctx.fill();
+
+      // Railing
+      Brush.line(ctx, cx - 110, horizY + 20, cx + 110, horizY + 20, 3, pal.ink);
+      Brush.line(ctx, cx - 120, horizY + 35, cx + 120, horizY + 35, 2, pal.ink);
+      ctx.restore();
+
+      // Figure Standing at the edge, cape/coat fluttering in breeze
+      const breeze = Math.sin(relT * 5) * 12;
+      ctx.save();
+      ctx.translate(cx, horizY + 15);
+      ctx.fillStyle = pal.ink;
+
+      // Head
+      ctx.beginPath();
+      ctx.arc(0, -70, 15, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Torso & fluttering coat
+      ctx.beginPath();
+      ctx.moveTo(-14, -55);
+      ctx.lineTo(14, -55);
+      ctx.lineTo(16 + breeze, 0);
+      ctx.lineTo(-24 - breeze, 0);
+      ctx.closePath();
+      ctx.fill();
+
+      // Legs
+      Brush.line(ctx, -7, 0, -7, 30, 5, pal.ink);
+      Brush.line(ctx, 7, 0, 7, 30, 5, pal.ink);
+      ctx.restore();
+
+      Brush.drawTextCard(ctx, "now. speaking with you.", w * 0.08, h * 0.12, relT / 4.0);
+
+      // Final credit card at the bottom
+      if (relT > 2.0) {
+        ctx.save();
+        ctx.font = "12px 'JetBrains Mono', monospace";
+        ctx.fillStyle = pal.ink;
+        ctx.textAlign = "center";
+        ctx.fillText("PURE JAVASCRIPT BRUSH STROKES · ZERO VIDEO MODELS · ZERO IMAGES", cx, h * 0.94);
+        ctx.restore();
+      }
+    }
+
+    // -------------------------------------------------------------
+    // MAIN MASTER RENDER DISPATCHER
+    // -------------------------------------------------------------
+    function renderFrame(timeInSec) {
+      const pal = PALETTES[state.paletteName];
+      const w = canvas.width;
+      const h = canvas.height;
+
+      // Update line-boil noise seed at 12 fps
+      const boilFrame = Math.floor(timeInSec * 12);
+      if (boilFrame !== lastBoilFrame) {
+        boilSeed = boilFrame;
+        lastBoilFrame = boilFrame;
+      }
+
+      // Clear canvas with background
+      ctx.fillStyle = pal.bg;
+      ctx.fillRect(0, 0, w, h);
+
+      // Identify active scene
+      let activeScene = SCENES[0];
+      for (const sc of SCENES) {
+        if (timeInSec >= sc.start && timeInSec <= sc.end) {
+          activeScene = sc;
+          break;
+        }
+      }
+      if (timeInSec >= TOTAL_DURATION) {
+        activeScene = SCENES[SCENES.length - 1];
+      }
+
+      // Update Scene Pill UI
+      if (activeSceneLabel) {
+        activeSceneLabel.textContent = activeScene.name;
+      }
+
+      // Highlight active storyboard beat button
+      beatBtns.forEach((btn, idx) => {
+        btn.classList.toggle("active", idx === (activeScene.id - 1));
+      });
+
+      const relT = Math.max(0, timeInSec - activeScene.start);
+
+      // Dispatch scene renderer
+      switch (activeScene.id) {
+        case 1: renderScene1(ctx, w, h, timeInSec, relT); break;
+        case 2: renderScene2(ctx, w, h, timeInSec, relT); break;
+        case 3: renderScene3(ctx, w, h, timeInSec, relT); break;
+        case 4: renderScene4(ctx, w, h, timeInSec, relT); break;
+        case 5: renderScene5(ctx, w, h, timeInSec, relT); break;
+        default: renderScene1(ctx, w, h, timeInSec, relT); break;
+      }
+
+      // Outer sketchy border frame
+      Brush.rect(ctx, 4, 4, w - 8, h - 8, 2.5, pal.ink);
+      Brush.rect(ctx, 8, 8, w - 16, h - 16, 1.0, pal.inkFaint);
+
+      // Update timeline UI
+      updateTimelineUI();
+    }
+
+    // -------------------------------------------------------------
+    // PLAYBACK & ANIMATION LOOP
+    // -------------------------------------------------------------
+    function updateTimelineUI() {
+      const pct = Math.min(100, Math.max(0, (state.currentTime / TOTAL_DURATION) * 100));
+      timelineProgress.style.width = `${pct}%`;
+      scrubberHandle.style.left = `${pct}%`;
+      timecode.textContent = `${formatTime(state.currentTime)} / ${formatTime(TOTAL_DURATION)}`;
+    }
+
+    function animLoop(timestamp) {
+      if (!state.lastTimestamp) state.lastTimestamp = timestamp;
+      const dt = (timestamp - state.lastTimestamp) / 1000.0;
+      state.lastTimestamp = timestamp;
+
+      if (state.isPlaying) {
+        state.currentTime += dt * state.playbackRate;
+        if (state.currentTime >= TOTAL_DURATION) {
+          if (state.isRecording) {
+            stopRecording();
+          }
+          if (state.isLooping) {
+            state.currentTime = 0.0;
+          } else {
+            state.currentTime = TOTAL_DURATION;
+            state.isPlaying = false;
+            updatePlayBtnUI();
+          }
+        }
+      }
+
+      renderFrame(state.currentTime);
+      requestAnimationFrame(animLoop);
+    }
+
+    function togglePlay() {
+      state.isPlaying = !state.isPlaying;
+      if (state.isPlaying && state.currentTime >= TOTAL_DURATION) {
+        state.currentTime = 0.0;
+      }
+      state.lastTimestamp = performance.now();
+      updatePlayBtnUI();
+    }
+
+    function updatePlayBtnUI() {
+      if (state.isPlaying) {
+        playIcon.textContent = "⏸";
+        playLabel.textContent = "Pause";
+        btnPlayPause.classList.add("btn-recording");
+      } else {
+        playIcon.textContent = "▶";
+        playLabel.textContent = "Play";
+        btnPlayPause.classList.remove("btn-recording");
+      }
+    }
+
+    function seekTo(timeS) {
+      state.currentTime = Math.max(0.0, Math.min(TOTAL_DURATION, timeS));
+      state.lastTimestamp = performance.now();
+      renderFrame(state.currentTime);
+    }
+
+    // -------------------------------------------------------------
+    // CANVAS VIDEO RECORDING ENGINE
+    // -------------------------------------------------------------
+    function toggleRecording() {
+      if (state.isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    }
+
+    function startRecording() {
+      state.isRecording = true;
+      state.recordedChunks = [];
+      btnRecord.classList.add("btn-recording");
+      recordDot.textContent = "⏹";
+      recordLabel.textContent = "Stop Recording";
+
+      // Reset to 0:00 and start playback
+      seekTo(0.0);
+      state.isPlaying = true;
+      updatePlayBtnUI();
+
+      const stream = canvas.captureStream(FPS);
+      let options = { mimeType: "video/webm;codecs=vp9" };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: "video/webm" };
+      }
+
+      try {
+        state.mediaRecorder = new MediaRecorder(stream, options);
+        state.mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            state.recordedChunks.push(e.data);
+          }
+        };
+        state.mediaRecorder.onstop = saveRecordedVideo;
+        state.mediaRecorder.start(100);
+        showToast("⏺ Recording video from canvas...");
+      } catch (err) {
+        console.error("Recording init error:", err);
+        showToast("⚠️ Recording error: " + err.message);
+        stopRecording();
+      }
+    }
+
+    function stopRecording() {
+      if (!state.isRecording) return;
+      state.isRecording = false;
+      btnRecord.classList.remove("btn-recording");
+      recordDot.textContent = "⏺";
+      recordLabel.textContent = "Record Video";
+
+      if (state.mediaRecorder && state.mediaRecorder.state !== "inactive") {
+        state.mediaRecorder.stop();
+      }
+    }
+
+    function saveRecordedVideo() {
+      if (!state.recordedChunks || state.recordedChunks.length === 0) {
+        showToast("No video chunks recorded.");
+        return;
+      }
+      const blob = new Blob(state.recordedChunks, { type: "video/webm" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `js_brush_animation_${Date.now()}.webm`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      showToast("🎉 Video recorded & downloaded successfully!");
+    }
+
+    // -------------------------------------------------------------
+    // EVENT LISTENERS
+    // -------------------------------------------------------------
+    btnPlayPause.addEventListener("click", togglePlay);
+
+    btnRestart.addEventListener("click", () => {
+      seekTo(0.0);
+      state.isPlaying = true;
+      updatePlayBtnUI();
+    });
+
+    btnLoop.addEventListener("click", () => {
+      state.isLooping = !state.isLooping;
+      btnLoop.textContent = state.isLooping ? "🔁 Loop: On" : "🔁 Loop: Off";
+      showToast(state.isLooping ? "Looping enabled" : "Looping disabled");
+    });
+
+    btnRecord.addEventListener("click", toggleRecording);
+
+    selectSpeed.addEventListener("change", (e) => {
+      state.playbackRate = parseFloat(e.target.value) || 1.0;
+    });
+
+    selectPalette.addEventListener("change", (e) => {
+      state.paletteName = e.target.value;
+      renderFrame(state.currentTime);
+      showToast(`Palette: ${e.target.selectedOptions[0].text}`);
+    });
+
+    selectAspect.addEventListener("change", (e) => {
+      const mode = e.target.value;
+      state.aspectRatio = mode;
+      if (mode === "9:16") {
+        canvas.width = 720;
+        canvas.height = 1280;
+        stageContainer.classList.add("portrait");
+      } else {
+        canvas.width = 1280;
+        canvas.height = 720;
+        stageContainer.classList.remove("portrait");
+      }
+      renderFrame(state.currentTime);
+      showToast(`Aspect Ratio: ${mode}`);
+    });
+
+    sliderBoil.addEventListener("input", (e) => {
+      state.lineBoilIntensity = parseInt(e.target.value) / 100.0;
+      renderFrame(state.currentTime);
+    });
+
+    // Storyboard Scene Jump Buttons
+    beatBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const start = parseFloat(btn.dataset.start) || 0.0;
+        seekTo(start);
+        state.isPlaying = true;
+        updatePlayBtnUI();
+      });
+    });
+
+    // Timeline Scrub Interaction
+    let isScrubbing = false;
+    function handleScrub(e) {
+      const rect = timelineWrap.getBoundingClientRect();
+      const clientX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      seekTo(ratio * TOTAL_DURATION);
+    }
+
+    timelineWrap.addEventListener("mousedown", (e) => {
+      isScrubbing = true;
+      handleScrub(e);
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (isScrubbing) handleScrub(e);
+    });
+    window.addEventListener("mouseup", () => {
+      if (isScrubbing) isScrubbing = false;
+    });
+
+    // Spacebar to Play/Pause
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "Space" && e.target.tagName !== "INPUT" && e.target.tagName !== "SELECT") {
+        e.preventDefault();
+        togglePlay();
+      }
+    });
+
+    // Initial Start
+    renderFrame(0.0);
+    requestAnimationFrame(animLoop);
+  </script>
+</body>
+</html>

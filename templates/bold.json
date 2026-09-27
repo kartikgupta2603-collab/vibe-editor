@@ -1,0 +1,64 @@
+{
+  "id": "bold",
+  "name": "Bold",
+  "description": "High impact punchy titles, glowing outline, high contrast and saturated background",
+  "background": {
+    "blur": 30,
+    "brightness": -0.3,
+    "contrast": 1.3,
+    "saturation": 1.25,
+    "opacity": 0.95,
+    "zoom": 1.2
+  },
+  "video": {
+    "scale": 1.0,
+    "border_width": 4,
+    "border_color": "#f59e0b",
+    "corner_radius": 20,
+    "shadow_enabled": true,
+    "shadow_color": "#f59e0b44",
+    "shadow_blur": 35,
+    "vertical_offset": -45
+  },
+  "series_text": {
+    "enabled": true,
+    "font": "Impact",
+    "size": 42,
+    "color": "#f59e0b",
+    "y_percent": 17,
+    "letter_spacing": 2,
+    "text_transform": "uppercase",
+    "animation": "pop"
+  },
+  "song_title": {
+    "font": "Impact",
+    "size": 64,
+    "color": "#ffffff",
+    "y_percent": 67,
+    "letter_spacing": 2,
+    "text_transform": "uppercase",
+    "animation": "pop"
+  },
+  "anime_name": {
+    "font": "Arial-Bold",
+    "size": 34,
+    "color": "#fcd34d",
+    "y_percent": 74,
+    "letter_spacing": 3,
+    "text_transform": "uppercase",
+    "animation": "fade_in"
+  },
+  "caption": {
+    "font": "Arial-Bold",
+    "size": 38,
+    "color": "#ffffff",
+    "y_percent": 82,
+    "background_pill": true,
+    "pill_color": "#000000aa",
+    "animation": "pop"
+  },
+  "filter": "high_contrast",
+  "vignette": 0.5,
+  "grain": 0.08,
+  "audio_visualizer": true
+}

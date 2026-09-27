@@ -1,0 +1,9 @@
+# Focus future graph updates on first-party source and documentation.
+.venv/
+app/static/vendor/
+downloads/
+exports/
+projects/
+temp/
+scratch/
+ss to fix/

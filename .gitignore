@@ -1,0 +1,40 @@
+# Environments & Secrets
+.env
+.env.local
+.venv/
+venv/
+env/
+
+# Python Cache & Testing
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Media & Runtime Directories (Preserve directory structure via .gitkeep)
+downloads/*
+!downloads/.gitkeep
+exports/*
+!exports/.gitkeep
+temp/*
+!temp/.gitkeep
+projects/*
+!projects/.gitkeep
+scratch/
+
+# Large Video Recordings in Scratch / Fix Folders
+ss to fix/*.mp4
+
+# Graphify Caches & Backups
+graphify-out/cache/
+graphify-out/202*
+
+# Operating System & IDE
+.DS_Store
+Thumbs.db
+ehthumbs.db
+.vscode/
+.idea/

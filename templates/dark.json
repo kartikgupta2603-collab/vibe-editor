@@ -1,0 +1,64 @@
+{
+  "id": "dark",
+  "name": "Dark",
+  "description": "Deep obsidian moody background, silver accents, high shadow depth",
+  "background": {
+    "blur": 50,
+    "brightness": -0.45,
+    "contrast": 1.2,
+    "saturation": 0.7,
+    "opacity": 0.95,
+    "zoom": 1.35
+  },
+  "video": {
+    "scale": 0.97,
+    "border_width": 2,
+    "border_color": "#475569",
+    "corner_radius": 18,
+    "shadow_enabled": true,
+    "shadow_color": "#000000ee",
+    "shadow_blur": 40,
+    "vertical_offset": -40
+  },
+  "series_text": {
+    "enabled": true,
+    "font": "Arial-Bold",
+    "size": 34,
+    "color": "#94a3b8",
+    "y_percent": 18,
+    "letter_spacing": 4,
+    "text_transform": "uppercase",
+    "animation": "fade_in"
+  },
+  "song_title": {
+    "font": "Arial-Bold",
+    "size": 52,
+    "color": "#f8fafc",
+    "y_percent": 68,
+    "letter_spacing": 2,
+    "text_transform": "uppercase",
+    "animation": "fade_in"
+  },
+  "anime_name": {
+    "font": "Arial",
+    "size": 30,
+    "color": "#64748b",
+    "y_percent": 74,
+    "letter_spacing": 3,
+    "text_transform": "uppercase",
+    "animation": "fade_in"
+  },
+  "caption": {
+    "font": "Arial-Italic",
+    "size": 34,
+    "color": "#cbd5e1",
+    "y_percent": 82,
+    "background_pill": true,
+    "pill_color": "#0f172a88",
+    "animation": "fade_in"
+  },
+  "filter": "dark",
+  "vignette": 0.6,
+  "grain": 0.08,
+  "audio_visualizer": true
+}

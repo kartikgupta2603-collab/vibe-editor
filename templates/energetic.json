@@ -1,0 +1,64 @@
+{
+  "id": "energetic",
+  "name": "Energetic",
+  "description": "Vibrant electric neon vibes, vivid saturation, bold cyber style for high-tempo hype songs",
+  "background": {
+    "blur": 25,
+    "brightness": -0.15,
+    "contrast": 1.35,
+    "saturation": 1.45,
+    "opacity": 0.9,
+    "zoom": 1.2
+  },
+  "video": {
+    "scale": 1.0,
+    "border_width": 3,
+    "border_color": "#ec4899",
+    "corner_radius": 16,
+    "shadow_enabled": true,
+    "shadow_color": "#ec489966",
+    "shadow_blur": 30,
+    "vertical_offset": -40
+  },
+  "series_text": {
+    "enabled": true,
+    "font": "Impact",
+    "size": 38,
+    "color": "#a855f7",
+    "y_percent": 17,
+    "letter_spacing": 3,
+    "text_transform": "uppercase",
+    "animation": "pop"
+  },
+  "song_title": {
+    "font": "Impact",
+    "size": 60,
+    "color": "#ffffff",
+    "y_percent": 67,
+    "letter_spacing": 3,
+    "text_transform": "uppercase",
+    "animation": "pop"
+  },
+  "anime_name": {
+    "font": "Arial-Bold",
+    "size": 32,
+    "color": "#f472b6",
+    "y_percent": 74,
+    "letter_spacing": 4,
+    "text_transform": "uppercase",
+    "animation": "fade_in"
+  },
+  "caption": {
+    "font": "Arial-Bold",
+    "size": 36,
+    "color": "#ffffff",
+    "y_percent": 82,
+    "background_pill": true,
+    "pill_color": "#83184399",
+    "animation": "pop"
+  },
+  "filter": "warm",
+  "vignette": 0.35,
+  "grain": 0.04,
+  "audio_visualizer": true
+}
