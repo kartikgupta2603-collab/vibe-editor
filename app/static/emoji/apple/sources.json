@@ -1,0 +1,10 @@
+{
+  "vendor": "Apple",
+  "version": "iOS 18.4",
+  "copyright": "Emoji artwork belongs to Apple. Source catalogue: Emojipedia.",
+  "images": [{
+    "unicode": "1f940",
+    "source": "https://em-content.zobj.net/source/apple/419/wilted-flower_1f940.png",
+    "size": [160, 160]
+  }]
+}

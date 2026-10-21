@@ -3,7 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JS Brush Animator — Pure Canvas Animation</title>
+  <title>Vibe Editor — Brush Animator</title>
+  <meta name="application-name" content="Vibe Editor">
+  <meta name="theme-color" content="#141414">
+  <link rel="icon" type="image/png" sizes="192x192" href="/branding/vibe-editor-icon-192.png?v=20261018_exact_logo">
+  <link rel="shortcut icon" href="/favicon.ico?v=20261018_exact_logo">
+  <link rel="apple-touch-icon" sizes="180x180" href="/branding/apple-touch-icon.png?v=20261018_exact_logo">
+  <link rel="manifest" href="/site.webmanifest?v=20261018_exact_logo">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@400;600;700;800&family=Special+Elite&display=swap" rel="stylesheet">
@@ -65,14 +71,12 @@
     }
 
     .brand-icon {
-      font-size: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 36px;
-      height: 36px;
-      background: linear-gradient(135deg, rgba(225, 29, 72, 0.2), rgba(56, 189, 248, 0.2));
-      border: 1px solid var(--border-strong);
+      display: block;
+      width: 68px;
+      height: 44px;
+      object-fit: contain;
+      padding: 4px;
+      background: #fff;
       border-radius: 8px;
     }
 
@@ -511,8 +515,8 @@
 
   <!-- Top Navigation -->
   <header>
-    <a href="/" class="brand" title="Back to Reel Studio">
-      <div class="brand-icon">🖌️</div>
+    <a href="/" class="brand" title="Back to Vibe Editor">
+      <img class="brand-icon" src="/branding/vibe-editor-logo.png?v=20261018_exact_logo" alt="Vibe Editor" width="68" height="44">
       <div class="brand-titles">
         <h1>JS Brush Animator <span class="badge-pure">Pure Code Animation</span></h1>
         <p class="brand-sub">No Video Models · No Image Files · 100% JavaScript Canvas Brush Strokes</p>
@@ -520,7 +524,7 @@
     </a>
 
     <div class="header-actions">
-      <a href="/" class="btn" title="Return to Studio Monitor">← Reel Studio</a>
+      <a href="/" class="btn" title="Return to Vibe Editor">← Vibe Editor</a>
       <button id="btnRecord" class="btn btn-primary" title="Record animation directly into an MP4/WebM video">
         <span id="recordDot">⏺</span> <span id="recordLabel">Record Video</span>
       </button>

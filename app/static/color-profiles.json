@@ -1,0 +1,31 @@
+{
+  "intel_custom": {
+    "id": "intel_custom",
+    "name": "Custom RGB",
+    "description": "An exportable software approximation inspired by the Intel Graphics Command Center settings in your recording. It is not an exact Intel display calibration.",
+    "rgb_slope": [0.92, 1.02, 1.04],
+    "rgb_offset": [-0.04, -0.08, -0.10],
+    "saturation": 1.5,
+    "reference": {
+      "application": "Intel Graphics Command Center — Display Color",
+      "recorded_custom": {
+        "brightness_rgb": [30, 31, 30],
+        "contrast_rgb": [13, 18, 19],
+        "hue": 0,
+        "saturation": 75
+      },
+      "recorded_default": {
+        "brightness_rgb": [38, 38, 38],
+        "contrast_rgb": [17, 17, 17]
+      },
+      "software_mapping": {
+        "note": "These are deliberate software grading conventions, not a published Intel transfer function. The recording does not show the default saturation value.",
+        "brightness_delta_scale": 0.01,
+        "contrast_delta_scale": 0.02,
+        "saturation_neutral": 50,
+        "formula": "gain = 1 + (custom_contrast - recorded_default_contrast) * 0.02; offset = (1 - gain) * 0.5 + (custom_brightness - recorded_default_brightness) * 0.01; saturation = custom_saturation / 50"
+      },
+      "viewing_note": "Use Intel's original/default display colours when judging the software filter; applying both display and video grading changes the laptop preview twice. Physical screens can still differ."
+    }
+  }
+}

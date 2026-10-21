@@ -39,7 +39,7 @@ def test_api():
         "duration": 90.0
     })
     assert res.status_code == 500
-    assert "readable source audio" in res.json()["detail"]
+    assert "loaded video with readable audio" in res.json()["detail"]
     print("  POST /api/ai/analyze correctly rejects missing audio evidence")
 
     # 5. History

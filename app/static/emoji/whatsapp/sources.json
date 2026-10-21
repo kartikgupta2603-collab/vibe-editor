@@ -1,0 +1,127 @@
+{
+  "vendor": "WhatsApp",
+  "version": "2.25.1.75",
+  "copyright": "Emoji artwork belongs to its respective creator, WhatsApp. Source catalogue: Emojipedia.",
+  "images": [
+    {
+      "unicode": "1f940",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/wilted-flower_1f940.png",
+      "size": [
+        160,
+        160
+      ]
+    },
+    {
+      "unicode": "1f608",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/smiling-face-with-horns_1f608.png",
+      "size": [
+        160,
+        160
+      ]
+    },
+    {
+      "unicode": "1f62c",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/grimacing-face_1f62c.png",
+      "size": [
+        160,
+        160
+      ]
+    },
+    {
+      "unicode": "2620",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/skull-and-crossbones_2620-fe0f.png",
+      "size": [
+        160,
+        160
+      ]
+    },
+    {
+      "unicode": "26a1",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/high-voltage_26a1.png",
+      "size": [
+        160,
+        160
+      ]
+    },
+    {
+      "unicode": "1f525",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/fire_1f525.png",
+      "size": [
+        160,
+        160
+      ]
+    },
+    {
+      "unicode": "1f440",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/eyes_1f440.png",
+      "size": [
+        160,
+        160
+      ]
+    },
+    {
+      "unicode": "1f62d",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/loudly-crying-face_1f62d.png",
+      "size": [
+        160,
+        160
+      ]
+    },
+    {
+      "unicode": "2728",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/sparkles_2728.png",
+      "size": [
+        160,
+        160
+      ]
+    },
+    {
+      "unicode": "2764",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/red-heart_2764-fe0f.png",
+      "size": [
+        160,
+        160
+      ]
+    },
+    {
+      "unicode": "1f5a4",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/black-heart_1f5a4.png",
+      "size": [
+        160,
+        160
+      ]
+    },
+    {
+      "unicode": "1f494",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/broken-heart_1f494.png",
+      "size": [
+        160,
+        160
+      ]
+    },
+    {
+      "unicode": "274c",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/cross-mark_274c.png",
+      "size": [
+        160,
+        160
+      ]
+    },
+    {
+      "unicode": "2705",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/check-mark-button_2705.png",
+      "size": [
+        160,
+        160
+      ]
+    },
+    {
+      "unicode": "2764-fe0f-200d-1f525",
+      "source": "https://em-content.zobj.net/source/whatsapp/417/heart-on-fire_2764-fe0f-200d-1f525.png",
+      "size": [
+        160,
+        160
+      ]
+    }
+  ]
+}

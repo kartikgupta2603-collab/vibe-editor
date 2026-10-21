@@ -7,3 +7,4 @@ python-multipart==0.0.32
 httpx==0.28.1
 pillow==12.3.0
 yt-dlp==2026.8.19
+gallery-dl==1.32.16

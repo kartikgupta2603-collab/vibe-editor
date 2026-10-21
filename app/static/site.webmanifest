@@ -1,0 +1,25 @@
+{
+  "name": "Vibe Editor",
+  "short_name": "Vibe Editor",
+  "description": "Your video and image reel editing studio.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#141414",
+  "icons": [
+    {
+      "src": "/branding/vibe-editor-icon-192.png?v=20261018_exact_logo",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/branding/vibe-editor-icon-512.png?v=20261018_exact_logo",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -101,7 +101,7 @@ def test_compatibility_registers_only_output_of_authorized_source(isolated_media
         main.api_ensure_compatible(main.CompatibleVideoRequest(file_path=str(unselected)))
 
 
-def test_exports_are_unique_and_forward_subtitle_controls(isolated_media, monkeypatch):
+def test_exports_are_unique_and_forward_subtitle_and_audio_controls(isolated_media, monkeypatch):
     source = isolated_media / "source.mp4"
     source.write_bytes(b"source")
     original = isolated_media / "exports" / "chosen.mp4"
@@ -115,7 +115,9 @@ def test_exports_are_unique_and_forward_subtitle_controls(isolated_media, monkey
     monkeypatch.setattr(main.project_manager, "add_history_entry", lambda **kw: kw)
     monkeypatch.setattr(main, "EXPORT_TASKS", {})
     request = main.ExportRequest(source_video=str(source), output_name="../chosen.mp4",
-                                 template={"name": "test"}, subtitle_font_size=57, subtitle_x=321)
+                                 template={"name": "test"}, subtitle_font_size=57, subtitle_x=321,
+                                 hook_fade_start=3.5,
+                                 audio_master={"enabled": True, "preset": "vocal", "noise_cleanup": True})
     for task_id in ("first", "second"):
         main.EXPORT_TASKS[task_id] = {}
         main._execute_export(task_id, request)
@@ -124,6 +126,9 @@ def test_exports_are_unique_and_forward_subtitle_controls(isolated_media, monkey
     assert all(Path(call["output_mp4"]).parent == original.parent for call in calls)
     assert calls[0]["subtitle_font_size"] == 57
     assert calls[0]["subtitle_x"] == 321
+    assert calls[0]["hook_fade_start"] == 3.5
+    # Legacy preset fields are ignored while the saved enabled choice survives.
+    assert calls[0]["audio_master"] == {"enabled": True}
     assert original.read_bytes() == b"old-export"
 
 
@@ -133,6 +138,49 @@ def test_missing_source_fails_without_guessing_another_video(isolated_media, mon
     main._execute_export("test", main.ExportRequest(source_video=str(isolated_media / "missing.mp4")))
     assert main.EXPORT_TASKS["test"]["status"] == "error"
     assert "re-select" in main.EXPORT_TASKS["test"]["message"]
+
+
+@pytest.mark.parametrize(
+    ("runner", "downloader"),
+    [
+        ("_execute_yt_download", main.YouTubeDownloader),
+        ("_execute_instagram_download", main.InstagramDownloader),
+    ],
+)
+def test_url_download_only_loads_video_and_never_calls_gemini(monkeypatch, runner, downloader):
+    task_id = "download-only"
+    main.DOWNLOAD_TASKS[task_id] = {"id": task_id, "status": "queued", "progress": 0.0}
+    monkeypatch.setattr(
+        downloader,
+        "download_video",
+        lambda **_kwargs: {"file_path": "C:/Vibe Editor/downloads/video.mp4", "title": "Video"},
+    )
+
+    async def unexpected_gemini(**_kwargs):
+        pytest.fail("URL download must not call Gemini")
+
+    monkeypatch.setattr(main.gemini_client, "generate_full_video_subtitles", unexpected_gemini)
+    getattr(main, runner)(task_id, "https://example.test/video")
+    task = main.DOWNLOAD_TASKS[task_id]
+    assert task["status"] == "completed"
+    assert task["file_path"].endswith("video.mp4")
+    assert "Gemini" not in task["message"]
+
+
+def test_instagram_caption_endpoint_forwards_context_to_gemini(monkeypatch):
+    received = {}
+
+    async def caption(**kwargs):
+        received.update(kwargs)
+        return {"caption": "Ready to post #AnimeReels", "source": "gemini"}
+
+    monkeypatch.setattr(main.gemini_client, "generate_instagram_caption", caption)
+    result = asyncio.run(main.api_generate_instagram_caption(main.InstagramCaptionRequest(
+        anime_name="Mashle", song_name="Bling-Bang-Bang-Born", hook="The beat arrives"
+    )))
+    assert result["source"] == "gemini"
+    assert received["anime_name"] == "Mashle"
+    assert received["hook"] == "The beat arrives"
 
 
 @pytest.fixture

@@ -1,6 +1,8 @@
 # Environments & Secrets
 .env
 .env.local
+.env.*
+!.env.example
 .venv/
 venv/
 env/
@@ -24,9 +26,18 @@ temp/*
 projects/*
 !projects/.gitkeep
 scratch/
+music_library/
+.runtime/
+.serena/
+output/
+*.log
+cookies*.txt
+*.pem
+*.key
 
 # Large Video Recordings in Scratch / Fix Folders
 ss to fix/*.mp4
+ss to fix/
 
 # Graphify Caches & Backups
 graphify-out/cache/

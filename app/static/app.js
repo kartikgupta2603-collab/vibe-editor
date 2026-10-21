@@ -1,13 +1,18 @@
 /**
- * Anime Song Reel Creator - Vibrant 2D Studio Engine
+ * Vibe Editor - Studio Engine
  */
 
 // Application State
 const state = {
   videoFile: null,
+  music: null,
+  reelName: "",
+  videoAudio: null,
   sourceGeneration: 0,
   _uploadPromise: null,
   videoPath: "",
+  imageSourcePath: "",
+  imageDuration: null,
   videoTitle: "",
   videoMeta: null,
   isPlaying: false,
@@ -17,6 +22,11 @@ const state = {
   aspectRatio: "9:16",
   dayNumber: 1,
   seriesFormat: "POV: That one anime opening you will NEVER skip ⚡",
+  hookFont: "arial_black",
+  hookStyle: "outlined",
+  // start=0 keeps the hook visible for the full selected clip.
+  hookFade: { start: 0 },
+  aiInstruction: "",
   songName: "",
   animeName: "",
   caption: "",
@@ -28,15 +38,21 @@ const state = {
   templateData: null,
   templatesList: [],
   adjustments: {
-    bgType: "blur",
+    bgType: "black",
     blur: 35,
     brightness: -0.25,
     scale: 1.0,
+    windowInset: 0,
+    verticalOffset: 0,
     radius: 12,
     curvedBorder: true,
+    borderShape: "curved",
     waveform: false
   },
   colorFilter: "original",
+  hideRegions: [],
+  hideAreaDrawing: false,
+  hideAreaDraft: null,
   filterIntensity: 100,
   colorAdjustments: {
     brightness: 0,
@@ -54,10 +70,16 @@ const state = {
   lyricsByMoment: {},
   showLyrics: true,
   subtitleStyle: "minimal",
+  subtitleFont: "segoe",
+  subtitleAnimation: "auto",
   subtitleLanguage: "both",
   smartLoop: true,
   loopMode: "circular",
   loopFadeDuration: 0.35,
+  audioMaster: {
+    enabled: false
+  },
+  playbackAudio: "original",
   fadeTransition: {
     mode: "none", // 'none', 'in', 'out', 'both'
     duration: 0.50
@@ -65,14 +87,17 @@ const state = {
   timelineZoom: 1.0,
   watermark: {
     enabled: false,
-    text: "lap_lac7"
+    text: "lap_lac7",
+    style: "clean",
+    font: "bahnschrift",
+    rotation: 90
   },
   creatorBadge: {
     enabled: false,
     text: "@Lap_lac7"
   },
   textElements: {
-    series: { x: 540, y: 320, size: 38 },
+    series: { x: 540, y: 360, size: 68, lineGap: 16, color: "#ffffff" },
     creatorBadge: { x: 540, y: 160, size: 30, color: "#ffffff" },
     watermark: { x: 140, y: 90, size: 28, color: "#ffffff" },
     subtitles: { x: 540, y: 1690, size: 38, color: "#ffffff" }
@@ -86,8 +111,9 @@ const state = {
 // DOM Elements
 const el = {
   // Navigation
-  navTabs: document.querySelectorAll(".nav-tab"),
+  navTabs: document.querySelectorAll(".nav-tab[data-view]"),
   tabContents: document.querySelectorAll(".panel-tab-content"),
+  studioWelcome: document.getElementById("studio-welcome"),
   btnExportQuick: document.getElementById("btn-export-quick"),
   btnExportQuickText: document.getElementById("btn-export-quick-text"),
   btnExportMain: document.getElementById("btn-export-main"),
@@ -97,17 +123,33 @@ const el = {
   // File & Source Selector Tabs
   tabSrcLocal: document.getElementById("tab-src-local"),
   tabSrcYt: document.getElementById("tab-src-yt"),
+  tabSrcIg: document.getElementById("tab-src-ig"),
   panelSrcLocal: document.getElementById("panel-src-local"),
   panelSrcYt: document.getElementById("panel-src-yt"),
+  panelSrcIg: document.getElementById("panel-src-ig"),
+  btnLocalImage: document.getElementById("btn-upload-local-image"),
+  inputLocalImage: document.getElementById("input-local-image"),
 
   // YouTube Downloader
   inputYtUrl: document.getElementById("input-yt-url"),
   btnYtDownload: document.getElementById("btn-yt-download"),
   btnYtText: document.getElementById("btn-yt-text"),
+  imageDurationRow: document.getElementById("image-duration-row"),
+  trimNudgeStart: document.getElementById("trim-nudge-start"),
+  trimNudgeEnd: document.getElementById("trim-nudge-end"),
   ytProgressBox: document.getElementById("yt-progress-box"),
   ytProgressBar: document.getElementById("yt-progress-bar"),
   ytProgressLabel: document.getElementById("yt-progress-label"),
   ytProgressPercent: document.getElementById("yt-progress-percent"),
+
+  // Instagram Downloader
+  inputIgUrl: document.getElementById("input-ig-url"),
+  btnIgDownload: document.getElementById("btn-ig-download"),
+  btnIgText: document.getElementById("btn-ig-text"),
+  igProgressBox: document.getElementById("ig-progress-box"),
+  igProgressBar: document.getElementById("ig-progress-bar"),
+  igProgressLabel: document.getElementById("ig-progress-label"),
+  igProgressPercent: document.getElementById("ig-progress-percent"),
 
   // File & Dropzone
   dropzone: document.getElementById("file-dropzone"),
@@ -127,8 +169,20 @@ const el = {
   btnDayDec: document.getElementById("btn-day-dec"),
   btnDayInc: document.getElementById("btn-day-inc"),
   inputSeriesText: document.getElementById("input-series-text"),
+  selectHookFont: document.getElementById("select-hook-font"),
+  selectHookStyle: document.getElementById("select-hook-style"),
+  sliderHookFadeStart: document.getElementById("slider-hook-fade-start"),
+  valHookFadeStart: document.getElementById("val-hook-fade-start"),
+  selectSubtitleFont: document.getElementById("select-subtitle-font"),
+  hookEmojiButtons: document.querySelectorAll("[data-hook-emoji]"),
   btnGenerateAiHooks: document.getElementById("btn-generate-ai-hooks"),
+  inputAiInstruction: document.getElementById("input-ai-instruction"),
   aiHooksContainer: document.getElementById("ai-hooks-container"),
+  btnGenerateAiCaption: document.getElementById("btn-generate-ai-caption"),
+  aiCaptionBox: document.getElementById("ai-caption-box"),
+  aiCaptionOutput: document.getElementById("ai-caption-output"),
+  aiCaptionStatus: document.getElementById("ai-caption-status"),
+  btnCopyAiCaption: document.getElementById("btn-copy-ai-caption"),
   inputSongName: document.getElementById("input-song-name"),
   inputAnimeName: document.getElementById("input-anime-name"),
   checkTrackPill: document.getElementById("check-track-pill"),
@@ -146,6 +200,9 @@ const el = {
   tagElemVisibleStatus: document.getElementById("tag-elem-visible-status"),
   sliderTextSize: document.getElementById("slider-text-size"),
   valTextSize: document.getElementById("val-text-size"),
+  hookLineGapRow: document.getElementById("hook-line-gap-row"),
+  sliderHookLineGap: document.getElementById("slider-hook-line-gap"),
+  valHookLineGap: document.getElementById("val-hook-line-gap"),
   sliderTextY: document.getElementById("slider-text-y"),
   valTextY: document.getElementById("val-text-y"),
   sliderTextX: document.getElementById("slider-text-x"),
@@ -184,16 +241,22 @@ const el = {
 
 
   // Style & Templates
-  tplQuickButtons: document.querySelectorAll(".tpl-btn"),
   activeTplBadge: document.getElementById("active-template-badge"),
   sliderBlur: document.getElementById("slider-blur"),
   sliderDim: document.getElementById("slider-dim"),
   sliderScale: document.getElementById("slider-scale"),
+  sliderWindowInset: document.getElementById("slider-window-inset"),
+  sliderSongWindowY: document.getElementById("slider-song-window-y"),
   sliderRadius: document.getElementById("slider-radius"),
   checkWaveform: document.getElementById("check-waveform"),
   checkSmartLoop: document.getElementById("check-smart-loop"),
   rowLoopMode: document.getElementById("row-loop-mode"),
   loopModeBtns: document.querySelectorAll(".loop-mode-btn"),
+  checkAudioMaster: document.getElementById("check-audio-master"),
+  btnPlaybackOriginal: document.getElementById("btn-playback-original"),
+  btnPlaybackEnhanced: document.getElementById("btn-playback-enhanced"),
+  audioMasterPlayer: document.getElementById("audio-master-player"),
+  audioMasterStatus: document.getElementById("audio-master-status"),
   bgModeBtns: document.querySelectorAll(".bg-mode-btn"),
   borderModeBtns: document.querySelectorAll(".border-mode-btn"),
   rowCornerRadius: document.getElementById("row-corner-radius"),
@@ -202,11 +265,18 @@ const el = {
   valBlur: document.getElementById("val-blur"),
   valDim: document.getElementById("val-dim"),
   valScale: document.getElementById("val-scale"),
+  valWindowInset: document.getElementById("val-window-inset"),
+  valSongWindowY: document.getElementById("val-song-window-y"),
   valRadius: document.getElementById("val-radius"),
 
   // Viewport, Studio Monitor & Timeline
   dockFilters: document.getElementById("dock-filters"),
   dockAdjustments: document.getElementById("dock-adjustments"),
+  reelStyleCard: document.getElementById("reel-style-card"),
+  studioEditWorkspace: document.querySelector(".studio-edit-workspace"),
+  workspaceFilterSlot: document.getElementById("workspace-filter-slot"),
+  workspaceReelStyleSlot: document.getElementById("workspace-reel-style-slot"),
+  reelStyleStageDock: document.getElementById("reel-style-stage-dock"),
   btnToggleFiltersDock: document.getElementById("btn-toggle-filters-dock"),
   btnToggleAdjustmentsDock: document.getElementById("btn-toggle-adjustments-dock"),
   filterActiveName: document.getElementById("filter-active-name"),
@@ -227,10 +297,10 @@ const el = {
   studioMonitor: document.getElementById("studio-monitor"),
   canvasSpecPill: document.getElementById("canvas-spec-pill"),
   btnFitView: document.getElementById("btn-fit-view"),
+  btnCenterFitVideo: document.getElementById("btn-center-fit-video"),
   hiddenVideo: document.getElementById("hidden-video"),
   reelCanvas: document.getElementById("reel-canvas"),
   btnPlayPause: document.getElementById("btn-play-pause"),
-  btnLoopClip: document.getElementById("btn-loop-clip"),
   timeCurrent: document.getElementById("time-current"),
   timeDuration: document.getElementById("time-duration"),
   scrubberTrack: document.getElementById("scrubber-track"),
@@ -276,11 +346,10 @@ const el = {
   btnCloseModal: document.getElementById("btn-close-modal"),
   btnModalDismiss: document.getElementById("btn-modal-dismiss"),
 
-  // Settings & History
+  // Settings
   settingsKey: document.getElementById("settings-gemini-key"),
   btnSaveKey: document.getElementById("btn-save-key"),
   settingsExportDir: document.getElementById("settings-export-dir"),
-  historyList: document.getElementById("history-list"),
   templatesCatalog: document.getElementById("templates-catalog"),
   toast: document.getElementById("toast"),
   toastMsg: document.getElementById("toast-msg"),
@@ -342,61 +411,6 @@ const VIDEO_FILTERS = {
     grayscale: 0,
     hueRotate: 0
   },
-  crema: {
-    id: "crema",
-    name: "Crema",
-    thumbGrad: "linear-gradient(135deg, #d97706, #fef3c7, #78350f)",
-    contrast: 0.05,
-    saturate: -0.10,
-    brightness: 0.03,
-    sepia: 0.20,
-    grayscale: 0,
-    hueRotate: -10
-  },
-  gingham: {
-    id: "gingham",
-    name: "Gingham",
-    thumbGrad: "linear-gradient(135deg, #71717a, #e4e4e7, #a1a1aa)",
-    contrast: -0.08,
-    saturate: -0.15,
-    brightness: 0.08,
-    sepia: 0.08,
-    grayscale: 0,
-    hueRotate: 0
-  },
-  juno: {
-    id: "juno",
-    name: "Juno",
-    thumbGrad: "linear-gradient(135deg, #dc2626, #f59e0b, #ec4899)",
-    contrast: 0.15,
-    saturate: 0.35,
-    brightness: 0.03,
-    sepia: 0,
-    grayscale: 0,
-    hueRotate: -8
-  },
-  lark: {
-    id: "lark",
-    name: "Lark",
-    thumbGrad: "linear-gradient(135deg, #0284c7, #38bdf8, #f0fdf4)",
-    contrast: 0.10,
-    saturate: 0.15,
-    brightness: 0.08,
-    sepia: 0,
-    grayscale: 0,
-    hueRotate: 5
-  },
-  ludwig: {
-    id: "ludwig",
-    name: "Ludwig",
-    thumbGrad: "linear-gradient(135deg, #991b1b, #f97316, #fbbf24)",
-    contrast: 0.12,
-    saturate: 0.10,
-    brightness: 0.03,
-    sepia: 0.12,
-    grayscale: 0,
-    hueRotate: 0
-  },
   moon: {
     id: "moon",
     name: "Moon",
@@ -406,39 +420,6 @@ const VIDEO_FILTERS = {
     brightness: 0.05,
     sepia: 0,
     grayscale: 1.0,
-    hueRotate: 0
-  },
-  perpetua: {
-    id: "perpetua",
-    name: "Perpetua",
-    thumbGrad: "linear-gradient(135deg, #065f46, #34d399, #6ee7b7)",
-    contrast: 0.08,
-    saturate: 0.10,
-    brightness: 0.04,
-    sepia: 0,
-    grayscale: 0,
-    hueRotate: 15
-  },
-  reyes: {
-    id: "reyes",
-    name: "Reyes",
-    thumbGrad: "linear-gradient(135deg, #b45309, #fde68a, #d97706)",
-    contrast: -0.10,
-    saturate: -0.15,
-    brightness: 0.12,
-    sepia: 0.25,
-    grayscale: 0,
-    hueRotate: 0
-  },
-  slumber: {
-    id: "slumber",
-    name: "Slumber",
-    thumbGrad: "linear-gradient(135deg, #581c87, #c084fc, #fbbf24)",
-    contrast: 0.05,
-    saturate: -0.25,
-    brightness: 0.03,
-    sepia: 0.30,
-    grayscale: 0,
     hueRotate: 0
   },
   aden: {
@@ -473,13 +454,23 @@ const VIDEO_FILTERS = {
     sepia: 0,
     grayscale: 0,
     hueRotate: -20
+  },
+  intel_custom: {
+    id: "intel_custom",
+    name: "Custom RGB",
+    thumbGrad: "linear-gradient(135deg, #45464d, #b6bcc7, #f0f0f0)",
+    description: "Software approximation inspired by your Intel recording. Use Intel original colors when judging the preview."
   }
 };
 
 function computeVideoFilterCss() {
   const fId = state.colorFilter || "original";
+  if (fId === "intel_custom" && window.VibeColorProfiles?.isAvailable(fId)) {
+    return window.VibeColorProfiles.filterCss(fId,
+      state.filterIntensity !== undefined ? state.filterIntensity : 100, state.colorAdjustments || {});
+  }
   const f = VIDEO_FILTERS[fId] || VIDEO_FILTERS.original;
-  const intensity = (state.filterIntensity !== undefined ? state.filterIntensity : 100) / 100;
+  const intensity = Math.max(0, Math.min(400, Number(state.filterIntensity ?? 100) || 0)) / 100;
   const adj = state.colorAdjustments || { brightness: 0, contrast: 100, saturation: 100, warmth: 0, vignette: 0 };
 
   const baseContrast = (adj.contrast !== undefined ? adj.contrast : 100) / 100;
@@ -508,6 +499,7 @@ function computeVideoFilterCss() {
   if (finalSepia > 0.01) parts.push(`sepia(${finalSepia.toFixed(3)})`);
   if (Math.abs(finalHueRotate) > 0.1) parts.push(`hue-rotate(${finalHueRotate.toFixed(1)}deg)`);
 
+
   return parts.join(" ");
 }
 
@@ -515,6 +507,14 @@ const ctx = el.reelCanvas.getContext("2d");
 let waveOffset = 0;
 const lastPreviewFrame = document.createElement("canvas");
 const lastPreviewFrameCtx = lastPreviewFrame.getContext("2d", { alpha: false });
+// The blurred backdrop is intentionally soft, so rendering it at full export
+// resolution on every playback frame only makes controls lag. Keep a small
+// cached copy for the monitor; the final FFmpeg export is unchanged.
+const blurPreviewCanvas = document.createElement("canvas");
+const blurPreviewCtx = blurPreviewCanvas.getContext("2d", { alpha: false });
+const PREVIEW_BLUR_SCALE = 0.20;
+const PREVIEW_BLUR_FPS = 24;
+let lastBlurPreviewFrameAt = -Infinity;
 
 function cachePreviewFrame(video) {
   if (!video || !video.videoWidth || !video.videoHeight) return;
@@ -531,10 +531,31 @@ function cachePreviewFrame(video) {
   } catch (_) {}
 }
 
+const SUBTITLE_STYLE_DEFAULT_COLORS = Object.freeze({
+  minimal: "#ffffff",
+  bold_lyrics: "#ffffff",
+  pop_bounce: "#ffffff",
+  neon_glow: "#00f0ff",
+  retro_90s: "#ffde00",
+  manga_flash: "#ffe600",
+  karaoke: "#ffe600",
+  cinematic: "#fbfbfb",
+  impact: "#ffe600",
+  lofi_pastel: "#f5f5dc",
+  jp_en: "#ffffff",
+  anime: "#f9a8d4",
+  white_on_black: "#ffffff"
+});
+
 function applySubtitleStyle(styleKey, reason = "") {
-  const allowed = ["minimal", "bold_lyrics", "neon_glow", "retro_90s", "karaoke", "cinematic", "impact", "lofi_pastel", "jp_en", "anime"];
+  const allowed = ["minimal", "bold_lyrics", "pop_bounce", "neon_glow", "retro_90s", "manga_flash", "karaoke", "cinematic", "impact", "lofi_pastel", "white_on_black", "jp_en", "anime"];
   const targetStyle = allowed.includes(styleKey) ? styleKey : "minimal";
   state.subtitleStyle = targetStyle;
+  if (state.textElements && state.textElements.subtitles) {
+    // Choosing a preset must visibly restore that preset. The color picker can
+    // still change this afterwards if the creator wants a custom color.
+    state.textElements.subtitles.color = SUBTITLE_STYLE_DEFAULT_COLORS[targetStyle];
+  }
   let styleTitle = targetStyle;
   document.querySelectorAll(".sub-style-card, .sub-style-btn").forEach(button => {
     const match = button.dataset.style === targetStyle;
@@ -549,11 +570,62 @@ function applySubtitleStyle(styleKey, reason = "") {
   if (reason) showToast(`✨ Styled Subtitles: ${styleTitle} — ${reason}`);
 }
 
+function refreshBlurPreviewBackground(videoSource, rawW, rawH, vidAspect, blurPx, brightVal, force = false) {
+  if (!videoSource || !rawW || !rawH) return false;
+  const now = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+  const interval = 1000 / PREVIEW_BLUR_FPS;
+  if (!force && blurPreviewCanvas.width > 0 && now - lastBlurPreviewFrameAt < interval) return true;
+
+  const lowW = Math.round(1080 * PREVIEW_BLUR_SCALE);
+  const lowH = Math.round(1920 * PREVIEW_BLUR_SCALE);
+  if (blurPreviewCanvas.width !== lowW || blurPreviewCanvas.height !== lowH) {
+    blurPreviewCanvas.width = lowW;
+    blurPreviewCanvas.height = lowH;
+  }
+
+  const lowCanvasAspect = lowW / lowH;
+  let drawW, drawH, drawX, drawY;
+  if (vidAspect > lowCanvasAspect) {
+    drawH = lowH * 1.25;
+    drawW = drawH * vidAspect;
+    drawX = (lowW - drawW) / 2;
+    drawY = (lowH - drawH) / 2;
+  } else {
+    drawW = lowW * 1.25;
+    drawH = drawW / vidAspect;
+    drawX = (lowW - drawW) / 2;
+    drawY = (lowH - drawH) / 2;
+  }
+
+  try {
+    blurPreviewCtx.setTransform(1, 0, 0, 1, 0, 0);
+    blurPreviewCtx.fillStyle = "#080b15";
+    blurPreviewCtx.fillRect(0, 0, lowW, lowH);
+    const scaledBlurPx = Math.max(3, Math.round(blurPx * PREVIEW_BLUR_SCALE));
+    blurPreviewCtx.filter = `blur(${scaledBlurPx}px) brightness(${brightVal}) contrast(1.1) saturate(1)`;
+    blurPreviewCtx.drawImage(videoSource, 0, 0, rawW, rawH, drawX, drawY, drawW, drawH);
+    blurPreviewCtx.filter = "none";
+    lastBlurPreviewFrameAt = now;
+    return true;
+  } catch (_) {
+    blurPreviewCtx.filter = "none";
+    return false;
+  }
+}
+
 // -------------------------------------------------------------
 // VIEWPORT MONITOR CONTROLS
 // -------------------------------------------------------------
 function setupFitView() {
   let isFillMode = false;
+  if (el.btnCenterFitVideo) {
+    el.btnCenterFitVideo.addEventListener("click", () => {
+      centerVideoFrame();
+      showToast("Full video fitted and centered.");
+    });
+  }
   if (el.btnFitView) {
     el.btnFitView.addEventListener("click", () => {
       isFillMode = !isFillMode;
@@ -569,11 +641,12 @@ function setupFitView() {
 // -------------------------------------------------------------
 function startRenderLoop() {
   let lastDraw = 0;
+  // Keep playback responsive while giving text fades enough samples to look smooth.
   const previewFrameInterval = 1000 / 30;
   function draw(now) {
-    // Source footage is normally 24/30 fps. Rendering it at 60 fps only repeats
-    // expensive 9:16 compositing work and makes the monitor stutter.
-    if (now - lastDraw >= previewFrameInterval) {
+    // All paused edits explicitly call renderReel(). Do not redraw a full
+    // blurred 9:16 composition every frame while the creator uses the UI.
+    if (state.isPlaying && now - lastDraw >= previewFrameInterval) {
       try {
         renderReel();
       } catch (err) {
@@ -581,9 +654,52 @@ function startRenderLoop() {
       }
       lastDraw = now;
     }
+    if (window.musicStudio) window.musicStudio.syncPreview();
     requestAnimationFrame(draw);
   }
   requestAnimationFrame(draw);
+}
+
+let subtitleCueCache = { source: null, cues: [] };
+let lastActiveSubtitleListIndex = -1;
+
+function findActiveSubtitleCue(cues, currentTime) {
+  if (subtitleCueCache.source !== cues) {
+    subtitleCueCache = {
+      source: cues,
+      cues: cues
+        .map((cue, index) => ({ cue, index, start: Number(cue.start), end: Number(cue.end) }))
+        .filter(item => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start)
+        .sort((a, b) => a.start - b.start)
+    };
+    let furthestEnd = -Infinity;
+    subtitleCueCache.cues.forEach(item => {
+      furthestEnd = Math.max(furthestEnd, item.end);
+      item.furthestEnd = furthestEnd;
+    });
+    lastActiveSubtitleListIndex = -1;
+  }
+
+  const ordered = subtitleCueCache.cues;
+  let low = 0;
+  let high = ordered.length - 1;
+  let candidate = -1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    if (ordered[middle].start <= currentTime) {
+      candidate = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  if (candidate < 0) return null;
+  // A short overlapping cue can end before the earlier sung phrase. The
+  // prefix end bound avoids scanning unrelated earlier cues on every frame.
+  for (let index = candidate; index >= 0 && ordered[index].furthestEnd + 0.05 >= currentTime; index -= 1) {
+    if (currentTime <= ordered[index].end + 0.05) return ordered[index];
+  }
+  return null;
 }
 
 // -------------------------------------------------------------
@@ -658,7 +774,9 @@ function getSubtitleLines(text, isSecondary) {
     return text.split("\n").map(l => l.trim()).filter(Boolean);
   }
   const hasJpChars = /[\u3040-\u30ff\u4e00-\u9faf]/.test(text);
-  const maxChars = hasJpChars ? 22 : 40;
+  // Keep a normal sung phrase together. Splitting it too early creates a tall,
+  // awkward subtitle block with Japanese and English both stacked several rows.
+  const maxChars = hasJpChars ? 34 : 68;
   if (text.length > maxChars) {
     if (!hasJpChars || isSecondary) {
       const words = text.split(/\s+/);
@@ -706,9 +824,9 @@ function adaptTextColorsForBackground(bgType) {
     state.textElements.watermark = { ...state.textElements.watermark, color: "#0f172a" };
     state.textElements.subtitles = { ...state.textElements.subtitles, color: "#0f172a" };
   } else {
-    state.textElements.series = { ...state.textElements.series, color: "#38bdf8" };
+    state.textElements.series = { ...state.textElements.series, color: "#ffffff" };
     state.textElements.song = { ...state.textElements.song, color: "#ffffff" };
-    state.textElements.anime = { ...state.textElements.anime, color: "#38bdf8" };
+    state.textElements.anime = { ...state.textElements.anime, color: "#ffffff" };
     state.textElements.creatorBadge = { ...state.textElements.creatorBadge, color: "#ffffff" };
     state.textElements.watermark = { ...state.textElements.watermark, color: "#ffffff" };
     state.textElements.subtitles = { ...state.textElements.subtitles, color: "#ffffff" };
@@ -727,7 +845,28 @@ function adaptTextColorsForBackground(bgType) {
   }
 }
 
-function renderDualSubtitles(ctx, jpRaw, enRaw, elapsed, totalDur, stylePreset, canvasWidth, canvasHeight, activeLine = null) {
+const SUBTITLE_ANIMATION_OPTIONS = Object.freeze(["auto", "fade", "pop", "rise", "slide", "none"]);
+
+function resolveSubtitleAnimation(stylePreset, requestedAnimation = "auto") {
+  const requested = SUBTITLE_ANIMATION_OPTIONS.includes(requestedAnimation) ? requestedAnimation : "auto";
+  if (requested !== "auto") return requested;
+  return "fade";
+}
+
+function syncSubtitleAnimation() {
+  // Studio uses the same quiet transition for every visual subtitle style.
+  state.subtitleAnimation = "auto";
+}
+
+function subtitleFadeOpacity(elapsed, duration, playing = true) {
+  if (!playing || duration <= 0) return 1;
+  const fadeIn = Math.min(0.12, duration / 4);
+  const fadeOut = Math.min(0.13, duration / 4);
+  return Math.max(0, Math.min(1, elapsed / fadeIn, (duration - elapsed) / fadeOut));
+}
+
+function renderDualSubtitles(ctx, jpRaw, enRaw, elapsed, totalDur, stylePreset, canvasWidth, canvasHeight, activeLine = null, requestedAnimation = "auto") {
+  const englishSubtitleScale = 1.12;
   const isWhiteBg = (state.adjustments && state.adjustments.bgType === "white");
   const subColor = (state.textElements && state.textElements.subtitles && state.textElements.subtitles.color)
     ? state.textElements.subtitles.color
@@ -755,20 +894,25 @@ function renderDualSubtitles(ctx, jpRaw, enRaw, elapsed, totalDur, stylePreset, 
     if (enRaw) enLines = getSubtitleLines(enRaw, true);
   }
 
-  if (stylePreset === "bold_lyrics" || stylePreset === "impact") {
+  if (stylePreset === "bold_lyrics" || stylePreset === "pop_bounce" || stylePreset === "manga_flash" || stylePreset === "impact") {
     enLines = enLines.map(l => l.toUpperCase());
   }
   if (stylePreset === "lofi_pastel") {
     enLines = enLines.map(l => l.toLowerCase());
   }
 
-  // Smooth subtle fade during active playback
-  let alpha = 1.0;
-  if (state.isPlaying && totalDur > 0) {
-    const fadeIn = Math.min(1.0, elapsed / 0.10);
-    const fadeOut = Math.min(1.0, (totalDur - elapsed) / 0.10);
-    alpha = Math.max(0.3, Math.min(fadeIn, fadeOut));
-  }
+  const animationPreset = typeof resolveSubtitleAnimation === "function"
+    ? resolveSubtitleAnimation(stylePreset, requestedAnimation)
+    : (requestedAnimation === "auto" ? "fade" : requestedAnimation);
+  const animationDuration = animationPreset === "pop" ? 0.18 : 0.20;
+  const animationProgress = Math.max(0, Math.min(1, elapsed / animationDuration));
+  const easedAnimationProgress = 1 - Math.pow(1 - animationProgress, 3);
+
+  // Match ASS's linear fade; no minimum opacity that makes line changes jump.
+  const alpha = animationPreset === "none" ? 1 : subtitleFadeOpacity(elapsed, totalDur, state.isPlaying);
+  const subtitleEntryScale = animationPreset === "pop" ? 1.15 - (0.15 * easedAnimationProgress) : 1;
+  const subtitleEntryOffsetY = animationPreset === "rise" ? (1 - easedAnimationProgress) * 26 : 0;
+  const subtitleEntryOffsetX = animationPreset === "slide" ? (1 - easedAnimationProgress) * 42 : 0;
 
   // Subtitle color — most styles share baseColor, some override
   let jpFill = baseColor;
@@ -780,7 +924,7 @@ function renderDualSubtitles(ctx, jpRaw, enRaw, elapsed, totalDur, stylePreset, 
     } else if (stylePreset === "retro_90s") {
       jpFill = "#FFDE00";
       enFill = "#FFDE00";
-    } else if (stylePreset === "impact") {
+    } else if (stylePreset === "manga_flash" || stylePreset === "impact") {
       jpFill = "#FFE600";
       enFill = "#FFE600";
     } else if (stylePreset === "lofi_pastel") {
@@ -796,6 +940,16 @@ function renderDualSubtitles(ctx, jpRaw, enRaw, elapsed, totalDur, stylePreset, 
   } else if (stylePreset === "karaoke") {
     jpFill = "rgba(15, 23, 42, 0.40)";
     enFill = "rgba(15, 23, 42, 0.40)";
+  }
+  if (stylePreset === "jp_en") {
+    enFill = isWhiteBg ? "#0369a1" : "#7dd3fc";
+  } else if (stylePreset === "anime") {
+    jpFill = isWhiteBg ? "#7e22ce" : "#f9a8d4";
+    enFill = isWhiteBg ? "#0369a1" : "#a5f3fc";
+  }
+  if (stylePreset === "white_on_black") {
+    jpFill = "#ffffff";
+    enFill = "#ffffff";
   }
 
   // Typography & strokes definition
@@ -813,6 +967,15 @@ function renderDualSubtitles(ctx, jpRaw, enRaw, elapsed, totalDur, stylePreset, 
     enStroke = isWhiteBg ? "rgba(15, 23, 42, 0.12)" : "#000000";
     enLineWidth = isWhiteBg ? 1.0 : 6.0;
     enH = 38;
+  } else if (stylePreset === "pop_bounce") {
+    jpFont = "900 44px 'Cabinet Grotesk', 'Noto Sans JP', sans-serif";
+    jpStroke = isWhiteBg ? "rgba(15, 23, 42, 0.12)" : "#000000";
+    jpLineWidth = isWhiteBg ? 1.0 : 8.0;
+    jpH = 54;
+    enFont = "900 29px 'Cabinet Grotesk', 'Plus Jakarta Sans', sans-serif";
+    enStroke = isWhiteBg ? "rgba(15, 23, 42, 0.12)" : "#000000";
+    enLineWidth = isWhiteBg ? 1.0 : 6.0;
+    enH = 40;
   } else if (stylePreset === "neon_glow") {
     jpFont = "800 42px 'Noto Sans JP', 'Outfit', sans-serif";
     jpStroke = isWhiteBg ? "rgba(15, 23, 42, 0.12)" : "#001a1f";
@@ -831,6 +994,15 @@ function renderDualSubtitles(ctx, jpRaw, enRaw, elapsed, totalDur, stylePreset, 
     enStroke = isWhiteBg ? "rgba(100, 80, 0, 0.2)" : "#000000";
     enLineWidth = isWhiteBg ? 1.0 : 4.0;
     enH = 34;
+  } else if (stylePreset === "manga_flash") {
+    jpFont = "900 44px 'Cabinet Grotesk', 'Noto Sans JP', sans-serif";
+    jpStroke = isWhiteBg ? "rgba(100, 80, 0, 0.2)" : "#000000";
+    jpLineWidth = isWhiteBg ? 1.5 : 8.0;
+    jpH = 54;
+    enFont = "900 27px 'Cabinet Grotesk', 'Plus Jakarta Sans', sans-serif";
+    enStroke = isWhiteBg ? "rgba(100, 80, 0, 0.2)" : "#000000";
+    enLineWidth = isWhiteBg ? 1.0 : 6.0;
+    enH = 38;
   } else if (stylePreset === "karaoke") {
     jpFont = "800 42px 'Noto Sans JP', sans-serif";
     jpStroke = isWhiteBg ? "rgba(15, 23, 42, 0.12)" : "#000000";
@@ -867,6 +1039,15 @@ function renderDualSubtitles(ctx, jpRaw, enRaw, elapsed, totalDur, stylePreset, 
     enStroke = null;
     enLineWidth = 0;
     enH = 32;
+  } else if (stylePreset === "white_on_black") {
+    jpFont = "800 40px 'Noto Sans JP', 'Plus Jakarta Sans', sans-serif";
+    jpStroke = null;
+    jpLineWidth = 0;
+    jpH = 50;
+    enFont = "800 24px 'Plus Jakarta Sans', sans-serif";
+    enStroke = null;
+    enLineWidth = 0;
+    enH = 34;
   } else if (stylePreset === "jp_en") {
     jpFont = "800 40px 'Noto Sans JP', sans-serif";
     jpStroke = isWhiteBg ? "rgba(15, 23, 42, 0.12)" : "#000000";
@@ -899,13 +1080,27 @@ function renderDualSubtitles(ctx, jpRaw, enRaw, elapsed, totalDur, stylePreset, 
 
   const subtitleLayout = (state.textElements && state.textElements.subtitles) || {};
   const subtitleScale = (subtitleLayout.size || 38) / 38;
+  // Two rows (Japanese + English) are ideal. If a genuinely long phrase still
+  // needs more rows, compact that one cue instead of letting it take over the reel.
+  const layoutLineCount = jpLines.length + enLines.length;
+  const compactScale = layoutLineCount > 2
+    ? Math.max(0.72, 1 - (layoutLineCount - 2) * 0.12)
+    : 1;
+  // This preset intentionally matches the classic serif reference, regardless
+  // of the normal subtitle font selected for the other presets.
+  const selectedSubtitleFont = stylePreset === "white_on_black"
+    ? getFontStack("georgia", "segoe")
+    : getFontStack(state.subtitleFont, "segoe");
+  const englishWeightAndSize = enFont.match(/^(\d+\s+[\d.]+px)/);
+  enFont = `${englishWeightAndSize ? englishWeightAndSize[1] : "700 26px"} ${selectedSubtitleFont}`;
+  const appliedSubtitleScale = subtitleScale * compactScale;
   const subtitleCenterX = subtitleLayout.x ?? canvasWidth / 2;
-  jpFont = jpFont.replace(/([\d.]+)px/, (_, size) => `${Number(size) * subtitleScale}px`);
-  enFont = enFont.replace(/([\d.]+)px/, (_, size) => `${Number(size) * subtitleScale}px`);
-  jpH *= subtitleScale;
-  enH *= subtitleScale;
-  jpLineWidth *= subtitleScale;
-  enLineWidth *= subtitleScale;
+  jpFont = jpFont.replace(/([\d.]+)px/, (_, size) => `${Number(size) * appliedSubtitleScale}px`);
+  enFont = enFont.replace(/([\d.]+)px/, (_, size) => `${Number(size) * appliedSubtitleScale * englishSubtitleScale}px`);
+  jpH *= appliedSubtitleScale;
+  enH *= appliedSubtitleScale * englishSubtitleScale;
+  jpLineWidth *= appliedSubtitleScale;
+  enLineWidth *= appliedSubtitleScale * englishSubtitleScale;
 
   // Consistent drop shadow for both Japanese and English
   let shadowColor, shadowBlur, shadowOffsetY;
@@ -944,7 +1139,7 @@ function renderDualSubtitles(ctx, jpRaw, enRaw, elapsed, totalDur, stylePreset, 
   }
 
   // Guaranteed zero-overlap vertical stacking
-  const subGap = 20 * subtitleScale;
+  const subGap = 20 * appliedSubtitleScale;
   const jpBlockH = jpLines.length * jpH;
   const enBlockH = enLines.length * enH;
   const hasBoth = jpLines.length > 0 && enLines.length > 0;
@@ -958,16 +1153,13 @@ function renderDualSubtitles(ctx, jpRaw, enRaw, elapsed, totalDur, stylePreset, 
   const blockTop = subCenterY - totalH / 2;
   const jpTop = blockTop;
   const enTop = (jpLines.length > 0) ? (jpTop + jpBlockH + subGap) : blockTop;
-  // Do not portray estimated phrase timings as word-accurate karaoke alignment.
-  // Audio-aligned word timing can opt in later; ordinary cues change cleanly at
-  // their verified phrase boundaries instead of sweeping at a fabricated pace.
+  // Sweep across each confirmed sung phrase. Exact audio-aligned word timings
+  // naturally follow the same progress; phrase-only cues still get a clean,
+  // readable karaoke effect rather than becoming a static yellow subtitle.
   const karaokeProgress = stylePreset === "karaoke"
-    ? (activeLine && activeLine.timing_source === "audio_aligned"
-      ? Math.max(0, Math.min(1, elapsed / Math.max(0.1, totalDur)))
-      : 1)
+    ? Math.max(0, Math.min(1, elapsed / Math.max(0.1, totalDur)))
     : 0;
   const karaokeFill = isWhiteBg ? "#0284c7" : "#ffe600";
-
   let maxJpW = 0;
   let maxEnW = 0;
 
@@ -992,11 +1184,20 @@ function renderDualSubtitles(ctx, jpRaw, enRaw, elapsed, totalDur, stylePreset, 
       maxJpW = Math.max(maxJpW, lineW);
       let scale = 1;
       if (lineW > canvasWidth - 100) {
-        scale = Math.max(0.80, (canvasWidth - 100) / lineW);
+        scale = Math.max(0.68, (canvasWidth - 100) / lineW);
       }
       ctx.save();
-      ctx.translate(subtitleCenterX, lineY);
-      if (scale < 1) ctx.scale(scale, scale);
+      ctx.translate(subtitleCenterX + subtitleEntryOffsetX, lineY + subtitleEntryOffsetY);
+      if (scale < 1 || subtitleEntryScale !== 1) ctx.scale(scale * subtitleEntryScale, scale * subtitleEntryScale);
+      if (stylePreset === "white_on_black") {
+        const barPadX = 16;
+        const barPadY = 8;
+        ctx.save();
+        ctx.shadowColor = "transparent";
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(-lineW / 2 - barPadX, -jpH / 2 - barPadY, lineW + barPadX * 2, jpH + barPadY * 2);
+        ctx.restore();
+      }
       if (jpStroke && jpLineWidth > 0) {
         ctx.strokeStyle = jpStroke;
         ctx.lineWidth = jpLineWidth;
@@ -1039,11 +1240,20 @@ function renderDualSubtitles(ctx, jpRaw, enRaw, elapsed, totalDur, stylePreset, 
       maxEnW = Math.max(maxEnW, lineW);
       let scale = 1;
       if (lineW > canvasWidth - 100) {
-        scale = Math.max(0.80, (canvasWidth - 100) / lineW);
+        scale = Math.max(0.68, (canvasWidth - 100) / lineW);
       }
       ctx.save();
-      ctx.translate(subtitleCenterX, lineY);
-      if (scale < 1) ctx.scale(scale, scale);
+      ctx.translate(subtitleCenterX + subtitleEntryOffsetX, lineY + subtitleEntryOffsetY);
+      if (scale < 1 || subtitleEntryScale !== 1) ctx.scale(scale * subtitleEntryScale, scale * subtitleEntryScale);
+      if (stylePreset === "white_on_black") {
+        const barPadX = 16;
+        const barPadY = 8;
+        ctx.save();
+        ctx.shadowColor = "transparent";
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(-lineW / 2 - barPadX, -enH / 2 - barPadY, lineW + barPadX * 2, enH + barPadY * 2);
+        ctx.restore();
+      }
       if (enStroke && enLineWidth > 0) {
         ctx.strokeStyle = enStroke;
         ctx.lineWidth = enLineWidth;
@@ -1081,27 +1291,589 @@ function renderDualSubtitles(ctx, jpRaw, enRaw, elapsed, totalDur, stylePreset, 
   delete state._textBoxes.subtitles_en;
 }
 
+const FONT_STACKS = Object.freeze({
+  impact: "Impact, 'Arial Black', sans-serif",
+  arial_black: "'Arial Black', Arial, sans-serif",
+  bahnschrift: "Bahnschrift, 'Arial Narrow', Arial, sans-serif",
+  segoe: "'Segoe UI', Arial, sans-serif",
+  franklin_heavy: "'Franklin Gothic Heavy', 'Arial Black', sans-serif",
+  oswald: "'Vibe Oswald', Oswald, 'Arial Narrow', Arial, sans-serif",
+  cooper_black: "'Cooper Black', 'Arial Black', serif",
+  georgia: "Georgia, 'Times New Roman', serif",
+  segoe_print: "'Segoe Print', 'Bradley Hand ITC', cursive",
+  twcen_condensed: "'Vibe Tw Cen', 'Tw Cen MT Condensed Extra Bold', 'Arial Narrow', sans-serif",
+  verdana: "Verdana, Arial, sans-serif"
+});
+const HOOK_FONT_STACK = "'Segoe UI', 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif";
+const DEFAULT_HOOK_FONT = "arial_black";
+const AVAILABLE_HOOK_FONTS = Object.freeze([
+  "arial_black", "segoe", "bahnschrift", "oswald", "cooper_black", "georgia", "segoe_print"
+]);
+
+const HOOK_FONT_WEIGHTS = Object.freeze({
+  arial_black: 900,
+  segoe: 400,
+  bahnschrift: 800,
+  oswald: 600,
+  cooper_black: 400,
+  georgia: 400,
+  segoe_print: 400,
+  twcen_condensed: 400
+});
+
+function getFontStack(fontKey, fallback = "segoe") {
+  return FONT_STACKS[fontKey] || FONT_STACKS[fallback];
+}
+
+function getHookFontWeight(fontKey) {
+  return HOOK_FONT_WEIGHTS[fontKey] || 900;
+}
+
+async function ensureWatermarkFontLoaded() {
+  if (!state.watermark?.enabled || !document.fonts?.load) return;
+  const key = state.watermark.font || "bahnschrift";
+  await document.fonts.load(`${getHookFontWeight(key)} 28px ${getFontStack(key, "bahnschrift")}`);
+}
+
+async function refreshWatermarkFont() {
+  try {
+    await ensureWatermarkFontLoaded();
+    renderReel();
+  } catch (error) {
+    showToast(`Username font could not load. Refresh and try again. ${error.message}`);
+  }
+}
+
+function applyFontControl(control, fontKey) {
+  if (!control) return;
+  control.style.fontFamily = getFontStack(fontKey, "segoe");
+  control.style.fontWeight = String(getHookFontWeight(fontKey));
+}
+
+function applyHookFontOptionPreviews(control) {
+  if (!control) return;
+  Array.from(control.options).forEach((option) => {
+    option.style.fontFamily = getFontStack(option.value, DEFAULT_HOOK_FONT);
+    option.style.fontWeight = String(getHookFontWeight(option.value));
+  });
+}
+
+function getViralHookLayout(ctx, rawText, requestedSize, maxWidth = 860, allowCustomSize = false, lineGap = 16, fontStack = HOOK_FONT_STACK, fontWeight = 900, maxHeight = 1840) {
+  // Hooks use the clean white, black-outline look popular in anime edits.
+  // Keep the creator's casing, spacing and line breaks while wrapping each entered line.
+  // A newline is an intentional composition choice, not ordinary whitespace.
+  const hardLines = String(rawText || "").replace(/\r\n?/g, "\n").split("\n")
+    .map(line => line.replace(/\t/g, "    "));
+  // Textareas often retain a final Enter. Do not render that as an invisible
+  // third row with its own black background, but preserve intentional blank
+  // rows between actual hook lines.
+  while (hardLines.length > 1 && !hardLines[0].trim()) hardLines.shift();
+  while (hardLines.length > 1 && !hardLines[hardLines.length - 1].trim()) hardLines.pop();
+  const requiredLineCount = Math.max(1, hardLines.length);
+  // A strong default is readable over anime footage. Manual resizing still
+  // has the full editor range.
+  const largestSize = Math.min(allowCustomSize ? 120 : 72, Math.max(14, Math.round(requestedSize || 68)));
+
+  let layout;
+  for (let size = largestSize; size >= 14; size -= 1) {
+    ctx.font = `600 ${size}px ${HOOK_FONT_STACK}`;
+    if (fontStack !== HOOK_FONT_STACK || fontWeight !== 600) ctx.font = `${fontWeight} ${size}px ${fontStack}`;
+    const lines = [];
+    for (const hardLine of hardLines) {
+      const words = hardLine ? hardLine.split(" ") : [];
+      if (!words.length) {
+        lines.push("");
+        continue;
+      }
+      let line = "";
+      let hasWord = false;
+      for (const word of words) {
+        // Empty tokens are intentional spaces, including before the first word.
+        const candidate = hasWord ? `${line} ${word}` : word;
+        hasWord = true;
+        if (measureHookLine(ctx, candidate, size) <= maxWidth) {
+          line = candidate;
+        } else {
+          if (line) lines.push(line);
+          if (measureHookLine(ctx, word, size) <= maxWidth) {
+            line = word;
+            continue;
+          }
+          line = "";
+          // Long words, URLs and emoji sequences must obey the same wrap width.
+          const characters = typeof Intl.Segmenter === "function"
+            ? Array.from(new Intl.Segmenter(undefined, {granularity: "grapheme"}).segment(word), part => part.segment)
+            : getHookEmojiRuns(word).flatMap(run => run.emoji ? [run.text] : Array.from(run.text));
+          for (const character of characters) {
+            if (line && measureHookLine(ctx, line + character, size) > maxWidth) {
+              lines.push(line); line = "";
+            }
+            line += character;
+          }
+        }
+      }
+      if (line) lines.push(line);
+    }
+    layout = { lines, size, lineHeight: Math.round(size * 1.22) + Math.max(0, Math.round(lineGap || 0)) };
+    // Manual sizing grows the text and adds rows instead of undoing the resize.
+    const height = Math.max(0, lines.length - 1) * layout.lineHeight + size * 1.22;
+    if ((allowCustomSize || lines.length <= Math.max(3, requiredLineCount)) && height <= maxHeight) return layout;
+  }
+
+  // Even the smallest fallback keeps its wrapped lines and matching font size.
+  const height = Math.max(0, layout.lines.length - 1) * layout.lineHeight + layout.size * 1.22;
+  if (height > maxHeight) {
+    const scale = maxHeight / height;
+    layout.size *= scale;
+    layout.lineHeight *= scale;
+  }
+  return layout;
+}
+
+const FIXED_HOOK_EMOJI = Object.freeze({
+  "⚡": "26a1", "🔥": "1f525", "👀": "1f440", "😭": "1f62d", "✨": "2728",
+  "❤": "2764", "🖤": "1f5a4", "💔": "1f494", "❌": "274c", "✅": "2705",
+  "❤️‍🔥": "2764-fe0f-200d-1f525", "❤‍🔥": "2764-fe0f-200d-1f525",
+  "😈": "1f608", "😬": "1f62c", "☠": "2620", "🥀": "1f940"
+});
+const hookEmojiPattern = new RegExp(`(${Object.keys(FIXED_HOOK_EMOJI).sort((a, b) => b.length - a.length).join("|")})\\uFE0F?`, "gu");
+// Visible artwork bounds in the bundled 160px images, excluding transparent padding.
+const HOOK_EMOJI_CROPS = Object.freeze({
+  "1f440": [3, 15, 156, 145], "1f494": [2, 8, 158, 154], "1f525": [19, 4, 140, 157],
+  "1f5a4": [4, 11, 156, 150], "1f608": [4, 2, 157, 155], "1f62c": [4, 4, 156, 157],
+  "1f62d": [4, 4, 156, 160], "2620": [3, 4, 156, 155], "26a1": [26, 4, 133, 156],
+  "2705": [4, 4, 156, 156], "2728": [4, 4, 155, 157], "274c": [17, 17, 142, 142],
+  "2764": [4, 11, 156, 150], "1f940": [3, 1, 158, 160],
+  "2764-fe0f-200d-1f525": [5, 13, 156, 151]
+});
+const hookEmojiImages = new Map();
+
+function getHookEmojiRuns(text) {
+  const value = String(text || ""), runs = []; let start = 0;
+  for (const match of value.matchAll(hookEmojiPattern)) {
+    if (match.index > start) runs.push({text: value.slice(start, match.index), emoji: null});
+    runs.push({text: match[0], emoji: FIXED_HOOK_EMOJI[match[1]]}); start = match.index + match[0].length;
+  }
+  if (start < value.length) runs.push({text: value.slice(start), emoji: null});
+  return runs;
+}
+
+function hasFixedHookEmoji(text) {
+  return getHookEmojiRuns(text).some(run => run.emoji);
+}
+
+function getHookEmojiGeometry(size, key) {
+  // Native heart pixels at 68px occupy 59px vertically, beginning 1px below
+  // the top baseline. TextMetrics includes padding outside that painted area.
+  const height = size * 59 / 68;
+  const top = size / 68;
+  const [sx, sy, right, bottom] = HOOK_EMOJI_CROPS[key];
+  const sw = right - sx, sh = bottom - sy, width = height * sw / sh;
+  return {sx, sy, sw, sh, width, height, top, advance: Math.max(size, width)};
+}
+
+function measureHookLine(ctx, text, size) {
+  return getHookEmojiRuns(text).reduce((width, run) => width + (run.emoji ? getHookEmojiGeometry(size, run.emoji).advance : ctx.measureText(run.text).width), 0);
+}
+
+async function ensureHookEmojiLoaded(text = state.seriesFormat || "") {
+  const keys = new Set(getHookEmojiRuns(text).map(run => run.emoji).filter(Boolean));
+  await Promise.all(Array.from(keys, key => {
+    if (!hookEmojiImages.has(key)) {
+      if (typeof Image !== "function") throw new Error("Emoji artwork is unavailable. Refresh Studio before exporting.");
+      const entry = {image: new Image(), ready: false, promise: null};
+      hookEmojiImages.set(key, entry);
+      entry.promise = new Promise((resolve, reject) => {
+        entry.image.onload = () => {entry.ready = true; resolve();};
+        entry.image.onerror = () => reject(new Error("Could not load the hook emoji artwork. Refresh Studio and try exporting again."));
+        entry.image.src = key === "1f940" ? "/emoji/apple/1f940.png" : `/emoji/whatsapp/${key}.png`;
+      });
+    }
+    return hookEmojiImages.get(key).promise;
+  }));
+}
+
+async function refreshHookEmoji(text = state.seriesFormat || "") {
+  try { await ensureHookEmojiLoaded(text); renderReel(); }
+  catch (error) { console.warn("Hook emoji artwork failed:", error); showToast(error.message); }
+}
+
+function drawHookLine(ctx, line, x, y, size, {stroke = false, fill = true, emoji = true, opacity = 1} = {}) {
+  if (!hasFixedHookEmoji(line)) {
+    if (stroke) ctx.strokeText(line, x, y);
+    if (fill) ctx.fillText(line, x, y);
+    return;
+  }
+  const width = measureHookLine(ctx, line, size);
+  let left = ctx.textAlign === "center" ? x - width / 2 : x;
+  ctx.save(); ctx.textAlign = "left";
+  for (const run of getHookEmojiRuns(line)) {
+    if (run.emoji) {
+      const entry = hookEmojiImages.get(run.emoji);
+      const geometry = getHookEmojiGeometry(size, run.emoji);
+      if (emoji && entry?.ready) {
+        ctx.save(); ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = opacity;
+        ctx.shadowColor = "transparent"; ctx.shadowBlur = 0; ctx.filter = "none";
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(entry.image, geometry.sx, geometry.sy, geometry.sw, geometry.sh,
+          left + (geometry.advance - geometry.width) / 2, y + geometry.top, geometry.width, geometry.height); ctx.restore();
+      }
+      left += geometry.advance;
+    } else {
+      if (stroke) ctx.strokeText(run.text, left, y);
+      if (fill) ctx.fillText(run.text, left, y);
+      left += ctx.measureText(run.text).width;
+    }
+  }
+  ctx.restore();
+}
+
+const EDIT_RENDER_INTERVAL = 1000 / 30;
+let lastEditRenderAt = -Infinity;
+let pendingEditRender = null;
+
+const USERNAME_BLEND_STRENGTH = 0.70;
+
+// One typography renderer for the monitor and the exported transparent text layer.
+function drawSceneBlendUsername(ctx, defaultWmX = 140, defaultWmY = 90, asMask = false) {
+  if (!state.watermark?.enabled || state.watermark.style !== "scene_blend") return;
+  const text = (state.watermark.text || "lap_lac7").trim().toUpperCase();
+  if (!text) return;
+  const config = state.textElements?.watermark || {x: defaultWmX, y: defaultWmY, size: 28};
+  const size = config.size || 28;
+  const vertical = Number(state.watermark.rotation ?? 90) === 90;
+  ctx.save();
+  ctx.font = `${getHookFontWeight(state.watermark.font || "bahnschrift")} ${size}px ${getFontStack(state.watermark.font, "bahnschrift")}`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.globalCompositeOperation = asMask ? "source-over" : "overlay";
+  ctx.globalAlpha = asMask ? 1 : USERNAME_BLEND_STRENGTH;
+  ctx.fillStyle = "#ffffff";
+  ctx.shadowBlur = 0;
+  ctx.translate(config.x, config.y);
+  if (vertical) ctx.rotate(Math.PI / 2);
+  const width = ctx.measureText(text).width;
+  ctx.fillText(text, 0, 0);
+  ctx.restore();
+  state._textBoxes = state._textBoxes || {};
+  state._textBoxes.watermark = vertical
+    ? {x: config.x - size / 2 - 6, y: config.y - 6, width: size + 12, height: width + 12}
+    : {x: config.x - 6, y: config.y - size / 2 - 6, width: width + 12, height: size + 12};
+}
+
+function getHookFadeOpacity(playbackTime = state.currentTime) {
+  const fade = state.hookFade || {};
+  const start = Number(fade.start) || 0;
+  const duration = 0.60;
+  // `timeupdate` can arrive only a few times per second. Read the decoder's
+  // live clock during playback so opacity changes every preview frame.
+  const liveVideoTime = state.isPlaying && el.hiddenVideo && Number.isFinite(Number(el.hiddenVideo.currentTime))
+    ? Number(el.hiddenVideo.currentTime)
+    : playbackTime;
+  const clipTime = liveVideoTime - Math.max(0, Number(state.startTime) || 0);
+  if (start <= 0 || !Number.isFinite(clipTime) || clipTime <= start) return 1;
+  return Math.max(0, Math.min(1, 1 - ((clipTime - start) / duration)));
+}
+
+function syncHookFadeControls() {
+  const fade = state.hookFade || { start: 0 };
+  const start = Math.max(0, Number(fade.start) || 0);
+  state.hookFade = { start };
+  if (el.sliderHookFadeStart) el.sliderHookFadeStart.value = String(start);
+  if (el.valHookFadeStart) el.valHookFadeStart.textContent = start > 0 ? `${start.toFixed(1)}s` : "Whole clip";
+}
+
+function drawStudioText(ctx, bgType, defaultWmX = 140, defaultWmY = 90, shadowScale = 1, includeSceneBlend = true, includeHook = true, includeWatermark = true, hookOpacity = null, visualReelTop = 0, hookSceneBlendMask = false, hookEmojiOnly = false) {
+  state._textBoxes = state._textBoxes || {};
+  // Blend onto footage before drawing the other text, matching export order.
+  if (includeSceneBlend) drawSceneBlendUsername(ctx, defaultWmX, defaultWmY);
+  // 4. SERIES HEADER TEXT / VIRAL HOOK (Movable & Resizable)
+  const visibleHookOpacity = hookOpacity === null ? getHookFadeOpacity() : hookOpacity;
+  if (state.showSeriesText !== false) {
+    if (includeHook && visibleHookOpacity > 0) {
+    const seriesCfg = state.textElements.series;
+    const seriesText = state.seriesFormat.replace("{day}", state.dayNumber);
+    if (typeof Image === "function" && getHookEmojiRuns(seriesText).some(run => run.emoji && !hookEmojiImages.has(run.emoji))) void refreshHookEmoji(seriesText);
+    const hookFont = typeof getFontStack === "function" ? getFontStack(state.hookFont, DEFAULT_HOOK_FONT) : HOOK_FONT_STACK;
+    const hookWeight = typeof getHookFontWeight === "function" ? getHookFontWeight(state.hookFont) : 900;
+    const isWhiteHookBanner = state.hookStyle === "black_on_white";
+    const isSceneBlendHook = state.hookStyle === "scene_blend";
+    // Leave mobile-safe side margins so larger hooks wrap before the reel edge.
+    // This same layout is used for the Studio preview and exported text layer.
+    const hookSafeWidth = 980;
+    const hookMaxHeight = isWhiteHookBanner && visualReelTop > 100 ? visualReelTop - 64 : 1840;
+    const hookLayout = getViralHookLayout(ctx, seriesText, seriesCfg.size || 68, hookSafeWidth, !!seriesCfg._custom, seriesCfg.lineGap, hookFont, hookWeight, hookMaxHeight);
+    const seriesLines = hookLayout.lines;
+    const sSize = hookLayout.size;
+    const sLineHeight = hookLayout.lineHeight;
+    const sFont = `600 ${sSize}px ${HOOK_FONT_STACK}`;
+    const selectedHookFont = `${hookWeight} ${sSize}px ${hookFont}`;
+    const whiteBannerPadding = Math.max(18, Math.round(sSize * 0.26));
+    const whiteBannerHeight = isWhiteHookBanner
+      ? whiteBannerPadding + (seriesLines.length - 1) * sLineHeight + Math.round(sSize * 1.05) + whiteBannerPadding
+      : 0;
+    // Grow the banner upward into the empty canvas area so it ends exactly
+    // where the visual footage starts, never over the footage itself.
+    const whiteBannerTop = isWhiteHookBanner ? Math.max(0, visualReelTop - whiteBannerHeight) : 0;
+
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, visibleHookOpacity));
+    const isManualMultiline = seriesLines.length > 1 && /\r?\n/.test(seriesText);
+    const hookTextAlign = isWhiteHookBanner ? "center" : (isManualMultiline ? "left" : "center");
+    let hookTextX = isWhiteHookBanner ? 540 : seriesCfg.x;
+    let hookTextY = isWhiteHookBanner
+      ? whiteBannerTop + whiteBannerPadding
+      : seriesCfg.y;
+    ctx.textAlign = hookTextAlign;
+    ctx.textBaseline = "top";
+    ctx.font = selectedHookFont || sFont;
+
+    let maxSeriesW = 0;
+    seriesLines.forEach((line) => {
+      const lw = measureHookLine(ctx, line, sSize);
+      if (lw > maxSeriesW) maxSeriesW = lw;
+    });
+    const hookBlockHeight = Math.max(0, seriesLines.length - 1) * sLineHeight + Math.ceil(sSize * 1.22);
+    const hookEmojiTop = hasFixedHookEmoji(seriesText) ? Math.min(0, getHookEmojiGeometry(sSize, "2764").top) : 0;
+    if (!isWhiteHookBanner) {
+      // Growing a hook near an edge must not push its text outside the reel.
+      // Keep saved placement intact; use the same visible bounds during export.
+      hookTextX = Math.max(50 + maxSeriesW / 2, Math.min(1030 - maxSeriesW / 2, hookTextX));
+      hookTextY = Math.max(40 - hookEmojiTop, Math.min(1880 - hookBlockHeight, hookTextY));
+    }
+
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+    const hookUsesBar = state.hookStyle === "white_on_black" || state.hookStyle === "black_on_white";
+    const hookBarColor = state.hookStyle === "black_on_white" ? "#ffffff" : "#000000";
+    ctx.lineWidth = Math.max(2, Math.round(sSize * 0.11));
+    ctx.strokeStyle = "#080808";
+    ctx.shadowColor = "rgba(0,0,0,.82)";
+    // Canvas shadows stay in device pixels when the drawing transform changes.
+    // Match their visible size when the 540-wide monitor becomes a 4K overlay.
+    ctx.shadowBlur = 4 * shadowScale;
+    // Black lettering is already fully legible on a white bar. A shadow here
+    // only softens the edges, so keep this appearance deliberately crisp.
+    if (state.hookStyle === "black_on_white") {
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+    }
+    if (isSceneBlendHook) {
+      // Keep 80% scene colour, with a light fallback for hooks placed over a
+      // black part of the reel. Without the fallback, an overlay blend over
+      // black renders black text and looks as if the hook disappeared.
+      ctx.globalCompositeOperation = hookSceneBlendMask ? "source-over" : "overlay";
+      ctx.globalAlpha = hookSceneBlendMask ? 1 : Math.max(0, Math.min(1, visibleHookOpacity * 0.80));
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = 0;
+    }
+
+    const barPadX = Math.max(16, Math.round(sSize * 0.22));
+    const barPadY = Math.max(7, Math.round(sSize * 0.12));
+    const barHeight = Math.round(sSize * 0.96) + barPadY * 2;
+    if (!hookEmojiOnly && isWhiteHookBanner && seriesLines.length > 0) {
+      ctx.save();
+      ctx.shadowColor = "transparent";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, whiteBannerTop, 1080, whiteBannerHeight);
+      ctx.restore();
+    } else if (!hookEmojiOnly && hookUsesBar && seriesLines.length > 0) {
+      // Each row hugs its own text width. Narrow rows are joined to the row
+      // above through their overlap, creating one stepped background shape
+      // instead of a large empty rectangle beside shorter lines.
+      const hookBars = seriesLines.map((line, index) => {
+        const lineW = measureHookLine(ctx, line, sSize);
+        const textLeft = isManualMultiline ? hookTextX - maxSeriesW / 2 : hookTextX - lineW / 2;
+        return {
+          left: textLeft - barPadX,
+          right: textLeft + lineW + barPadX,
+          top: hookTextY + index * sLineHeight - barPadY,
+          width: lineW + barPadX * 2
+        };
+      });
+      ctx.save();
+      ctx.shadowColor = "transparent";
+      ctx.fillStyle = hookBarColor;
+      ctx.beginPath();
+      hookBars.forEach((bar) => ctx.rect(bar.left, bar.top, bar.width, barHeight));
+      for (let index = 0; index < hookBars.length - 1; index += 1) {
+        const current = hookBars[index];
+        const next = hookBars[index + 1];
+        const connectorLeft = Math.max(current.left, next.left);
+        const connectorRight = Math.min(current.right, next.right);
+        const connectorTop = current.top + barHeight;
+        const connectorHeight = next.top - connectorTop;
+        if (connectorRight > connectorLeft && connectorHeight > 0) {
+          ctx.rect(connectorLeft, connectorTop, connectorRight - connectorLeft, connectorHeight);
+        }
+      }
+      ctx.fill();
+      ctx.restore();
+    }
+
+    seriesLines.forEach((line, i) => {
+      let lineCol = seriesCfg._custom ? seriesCfg.color : "#ffffff";
+      if (bgType === "white" && (!lineCol || !isDarkColor(lineCol))) lineCol = "#0f172a";
+      if (bgType !== "white" && (!lineCol || isDarkColor(lineCol))) lineCol = "#ffffff";
+      if (state.hookStyle === "white_on_black") lineCol = "#ffffff";
+      if (state.hookStyle === "black_on_white") lineCol = "#000000";
+      if (isSceneBlendHook) lineCol = "#ffffff";
+      ctx.fillStyle = lineCol;
+      const lineX = hookTextAlign === "left" ? hookTextX - maxSeriesW / 2 : hookTextX;
+      const lineY = hookTextY + i * sLineHeight;
+      if (hookEmojiOnly) {
+        drawHookLine(ctx, line, lineX, lineY, sSize, {fill: false, opacity: visibleHookOpacity});
+      } else if (isSceneBlendHook && !hookSceneBlendMask) {
+        ctx.save();
+        ctx.globalCompositeOperation = "source-over";
+        ctx.globalAlpha = Math.max(0, Math.min(1, visibleHookOpacity * 0.20));
+        drawHookLine(ctx, line, lineX, lineY, sSize, {emoji: false});
+        ctx.restore();
+        drawHookLine(ctx, line, lineX, lineY, sSize, {emoji: false});
+        drawHookLine(ctx, line, lineX, lineY, sSize, {emoji: false});
+        drawHookLine(ctx, line, lineX, lineY, sSize, {fill: false, opacity: visibleHookOpacity});
+      } else {
+        drawHookLine(ctx, line, lineX, lineY, sSize, {stroke: !hookUsesBar && !isSceneBlendHook, emoji: !hookSceneBlendMask, opacity: visibleHookOpacity});
+      }
+    });
+    ctx.restore();
+
+    // Save bounding box for series text
+    state._textBoxes.series = {
+      x: isWhiteHookBanner ? 0 : hookTextX - maxSeriesW / 2 - 16,
+      y: isWhiteHookBanner ? whiteBannerTop : hookTextY + Math.min(-4, hookEmojiTop),
+      width: isWhiteHookBanner ? 1080 : maxSeriesW + 32,
+      height: isWhiteHookBanner
+        ? whiteBannerHeight
+        : hookBlockHeight + 10 + Math.max(0, -hookEmojiTop - 4)
+    };
+
+    } else {
+      delete state._textBoxes.series;
+    }
+  } else {
+    delete state._textBoxes.series;
+  }
+
+  // Omit Song Name, Anime Name, and Track Pill overlays from video canvas
+  delete state._textBoxes.song;
+  delete state._textBoxes.anime;
+
+  // 6b. USERNAME WATERMARK (optional, clean and readable)
+  const isWmEnabled = !!(state.watermark && state.watermark.enabled);
+  const wmText = (state.watermark && state.watermark.text && state.watermark.text.trim())
+    ? state.watermark.text.trim()
+    : ((el.inputWatermarkText && el.inputWatermarkText.value && el.inputWatermarkText.value.trim())
+       ? el.inputWatermarkText.value.trim()
+       : "lap_lac7");
+  const wmCfg = (state.textElements && state.textElements.watermark) ? state.textElements.watermark : { x: defaultWmX, y: defaultWmY, size: 28, color: "#ffffff" };
+
+  if (includeWatermark && isWmEnabled && wmText) {
+    const wmSize = wmCfg.size || 28;
+    if (state.watermark.style === "scene_blend") {
+      return;
+    }
+    const wmFont = `${getHookFontWeight(state.watermark.font || "bahnschrift")} ${wmSize}px ${getFontStack(state.watermark.font, "bahnschrift")}`;
+    ctx.save();
+    ctx.font = wmFont;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    const nameW = ctx.measureText(wmText).width;
+    let wmColor = wmCfg.color;
+    if (bgType === "white") {
+      if (!wmColor || !isDarkColor(wmColor)) wmColor = "#0f172a";
+      ctx.fillStyle = wmColor;
+      ctx.shadowColor = "rgba(255, 255, 255, 0.55)";
+      ctx.shadowBlur = 3 * shadowScale;
+      ctx.shadowOffsetY = shadowScale;
+    } else {
+      if (!wmColor || isDarkColor(wmColor)) wmColor = "#ffffff";
+      ctx.fillStyle = wmColor;
+      ctx.shadowColor = "rgba(0, 0, 0, 0.82)";
+      ctx.shadowBlur = 5 * shadowScale;
+      ctx.shadowOffsetY = 2 * shadowScale;
+    }
+    ctx.fillText(wmText, wmCfg.x, wmCfg.y);
+    ctx.restore();
+
+    state._textBoxes.watermark = {
+      x: wmCfg.x - 6,
+      y: wmCfg.y - wmSize / 2 - 6,
+      width: nameW + 12,
+      height: wmSize + 12
+    };
+  } else {
+    delete state._textBoxes.watermark;
+  }
+
+}
+
+function createStudioTextOverlay() {
+  const options = arguments[0] || {};
+  if ((state.aspectRatio || "9:16") !== "9:16") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = 2160;
+  canvas.height = 3840;
+  const textContext = canvas.getContext("2d");
+  if (!textContext) throw new Error("Could not prepare Studio text for export. Reload and try again.");
+  textContext.setTransform(2, 0, 0, 2, 0, 0);
+  // Canvas shadows use device pixels, unlike text/strokes, so preserve their
+  // visible size relative to the monitor's actual drawing resolution.
+  const shadowScale = canvas.width / (el.reelCanvas.width || 540);
+  // Scene blend depends on each video frame; export renders that mask separately.
+  if (options.usernameSceneMask) {
+    drawSceneBlendUsername(textContext, 140, 90, true);
+  } else {
+    drawStudioText(textContext, (state.adjustments && state.adjustments.bgType) || "black", 140, 90, shadowScale, false, options.includeHook !== false, options.includeWatermark !== false, 1, state._visualReelTop || 0, options.hookSceneBlendMask === true, options.hookEmojiOnly === true);
+  }
+  return canvas.toDataURL("image/png");
+}
+
 function renderReel() {
+  // Sliders can fire far faster than a screen can show. Coalesce paused-edit
+  // redraws to 30fps, while active playback keeps its separate 24fps loop.
+  const renderNow = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+  if (!state.isPlaying && renderNow - lastEditRenderAt < EDIT_RENDER_INTERVAL) {
+    if (pendingEditRender === null && typeof setTimeout === "function") {
+      pendingEditRender = setTimeout(() => {
+        pendingEditRender = null;
+        renderReel();
+      }, Math.ceil(EDIT_RENDER_INTERVAL - (renderNow - lastEditRenderAt)));
+    }
+    return;
+  }
+  if (pendingEditRender !== null && typeof clearTimeout === "function") {
+    clearTimeout(pendingEditRender);
+    pendingEditRender = null;
+  }
+  lastEditRenderAt = renderNow;
   const vid = el.hiddenVideo;
   const liveVideoReady = vid && vid.readyState >= 1 && vid.videoWidth > 0;
-  if (liveVideoReady && vid.readyState >= 2) cachePreviewFrame(vid);
+  // The live video is already the source during playback. Copying it into a
+  // second canvas every frame was extra GPU/CPU work and caused monitor lag.
+  if (liveVideoReady && vid.readyState >= 2 && (vid.paused || vid.seeking)) cachePreviewFrame(vid);
   const videoSource = (vid && vid.readyState >= 2 && vid.videoWidth > 0)
     ? vid
     : (lastPreviewFrame.width > 0 ? lastPreviewFrame : (liveVideoReady ? vid : null));
   const hasVideo = !!videoSource;
+  // The welcome artwork belongs to Studio's interface, never the export canvas.
+  if (el.studioWelcome) el.studioWelcome.hidden = !!state.videoPath || hasVideo;
   const w = 1080;
   const h = 1920;
   const previewScale = el.reelCanvas.width / w;
 
-  // Draw in final-export coordinates while using the lighter monitor canvas.
-  // This keeps all layout values unchanged and reduces preview pixel work by 75%.
+  // Draw in final-export coordinates at the final-export resolution so the
+  // monitor uses the same text geometry and sharpness as the reel.
   ctx.setTransform(previewScale, 0, 0, previewScale, 0, 0);
 
   // Clear
   ctx.fillStyle = "#080b15";
   ctx.fillRect(0, 0, w, h);
 
-  const bgType = (state.adjustments && state.adjustments.bgType) || "blur";
+  const bgType = (state.adjustments && state.adjustments.bgType) || "black";
 
   // Natural Video Aspect Ratio & Dynamic Frame Height
   // The video is always rendered in its full proper length without any vertical cropping
@@ -1122,67 +1894,57 @@ function renderReel() {
     ctx.fillRect(0, 0, w, h);
 
     if (hasVideo) {
-      ctx.save();
       const blurPx = Math.round(state.adjustments.blur);
       const brightVal = 1.0 + state.adjustments.brightness;
-      ctx.filter = `blur(${blurPx}px) brightness(${brightVal})`;
-
-      const canvasAspect = 9 / 16;
-      let drawW, drawH, drawX, drawY;
-
-      if (vidAspect > canvasAspect) {
-        drawH = h * 1.25;
-        drawW = drawH * vidAspect;
-        drawX = (w - drawW) / 2;
-        drawY = (h - drawH) / 2;
-      } else {
-        drawW = w * 1.25;
-        drawH = drawW / vidAspect;
-        drawX = (w - drawW) / 2;
-        drawY = (h - drawH) / 2;
+      const didRefresh = refreshBlurPreviewBackground(
+        videoSource, rawW, rawH, vidAspect, blurPx, brightVal, !state.isPlaying
+      );
+      if (didRefresh && blurPreviewCanvas.width > 0) {
+        ctx.drawImage(blurPreviewCanvas, 0, 0, w, h);
       }
 
-      ctx.drawImage(videoSource, 0, 0, rawW, rawH, drawX, drawY, drawW, drawH);
-      ctx.restore();
-
-      // Vibrant anime color wash gradient overlay
-      const wash = ctx.createLinearGradient(0, 0, 0, h);
-      wash.addColorStop(0, "rgba(10, 13, 24, 0.6)");
-      wash.addColorStop(0.3, "rgba(139, 92, 246, 0.15)");
-      wash.addColorStop(0.7, "rgba(6, 182, 212, 0.12)");
-      wash.addColorStop(1, "rgba(10, 13, 24, 0.8)");
-      ctx.fillStyle = wash;
-      ctx.fillRect(0, 0, w, h);
     } else {
-      // Vibrant Placeholder Anime Canvas
-      const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, "#1e1b4b");
-      grad.addColorStop(0.4, "#0f172a");
-      grad.addColorStop(0.8, "#311042");
-      grad.addColorStop(1, "#090d1a");
-      ctx.fillStyle = grad;
+      // Keep an unloaded monitor neutral rather than pretending it has a
+      // blue/purple blur background.
+      ctx.fillStyle = "#080b15";
       ctx.fillRect(0, 0, w, h);
     }
   }
 
   // 2. FOREGROUND VIDEO FRAME (Dynamically fits active aspect ratio)
-  const fgScale = state.adjustments.scale;
-  const fgWidth = Math.round(w * fgScale);
-  const fgHeight = Math.round(fgWidth / vidAspect);
-  const fgX = Math.round((w - fgWidth) / 2);
-  const fgY = Math.round((h - fgHeight) / 2 - 40);
-  const isCurved = (state.adjustments && state.adjustments.curvedBorder !== false);
-  const maxPossibleRadius = Math.floor(Math.min(fgWidth, fgHeight) / 2);
-  const rawRadius = isCurved ? (state.adjustments.radius !== undefined ? state.adjustments.radius : 16) : 0;
+  const fgScale = getSongWindowScale(state.adjustments.scale);
+  const {width: fgWidth, height: fgHeight, x: fgX, y: fgY} = getVideoFrameGeometry(rawW, rawH, w, h, fgScale, state.adjustments.verticalOffset);
+  // Large reel windows can extend beyond the canvas. Round the visible window
+  // edge, not the off-screen outer rectangle, so the creator can see the
+  // selected corner shape at every scale.
+  const visibleInset = Math.min(getSongWindowInset(state.adjustments.windowInset), Math.floor(Math.min(w, h) / 2) - 1);
+  const visibleFrameX = Math.max(visibleInset, fgX);
+  const visibleFrameY = Math.max(visibleInset, fgY);
+  const visibleFrameRight = Math.min(w - visibleInset, fgX + fgWidth);
+  const visibleFrameBottom = Math.min(h - visibleInset, fgY + fgHeight);
+  const visibleFrameWidth = Math.max(0, visibleFrameRight - visibleFrameX);
+  const visibleFrameHeight = Math.max(0, visibleFrameBottom - visibleFrameY);
+  state._visualReelTop = visibleFrameY;
+  const borderShape = getBorderShape();
+  const isCurved = borderShape !== "straight";
+  const maxPossibleRadius = Math.floor(Math.min(visibleFrameWidth, visibleFrameHeight) / 2);
+  const rawRadius = borderShape === "circular"
+    ? maxPossibleRadius
+    : (isCurved ? (state.adjustments.radius !== undefined ? state.adjustments.radius : 16) : 0);
   const radius = Math.min(Math.max(0, rawRadius), maxPossibleRadius);
 
   if (hasVideo) {
     ctx.save();
-    ctx.shadowColor = (bgType === "white") ? "rgba(0, 0, 0, 0.2)" : "rgba(139, 92, 246, 0.5)";
-    ctx.shadowBlur = (bgType === "white") ? 20 : 35;
-    ctx.shadowOffsetY = 15;
+    applyHideAreaClips(ctx, w, h);
     ctx.beginPath();
-    ctx.roundRect(fgX, fgY, fgWidth, fgHeight, radius);
+    if (borderShape === "circular") {
+      ctx.ellipse(
+        visibleFrameX + visibleFrameWidth / 2, visibleFrameY + visibleFrameHeight / 2,
+        visibleFrameWidth / 2, visibleFrameHeight / 2, 0, 0, Math.PI * 2
+      );
+    } else {
+      ctx.roundRect(visibleFrameX, visibleFrameY, visibleFrameWidth, visibleFrameHeight, radius);
+    }
     ctx.fillStyle = "#000";
     ctx.fill();
     ctx.shadowColor = "transparent";
@@ -1210,33 +1972,6 @@ function renderReel() {
     }
 
     ctx.restore();
-
-    ctx.save();
-    ctx.strokeStyle = (bgType === "white") ? "rgba(0, 0, 0, 0.15)" : "rgba(255, 255, 255, 0.35)";
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.roundRect(fgX, fgY, fgWidth, fgHeight, radius);
-    ctx.stroke();
-    ctx.restore();
-  } else {
-    // Placeholder Frame
-    ctx.save();
-    ctx.fillStyle = (bgType === "white") ? "rgba(241, 245, 249, 0.95)" : "rgba(17, 24, 42, 0.9)";
-    ctx.beginPath();
-    ctx.roundRect(fgX, fgY, fgWidth, fgHeight, radius);
-    ctx.fill();
-    ctx.strokeStyle = (bgType === "white") ? "rgba(2, 132, 199, 0.6)" : "rgba(6, 182, 212, 0.6)";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.fillStyle = (bgType === "white") ? "#0284c7" : "#38bdf8";
-    ctx.font = "800 28px 'Cabinet Grotesk', sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("ANIME FOOTAGE", w / 2, fgY + fgHeight / 2 - 12);
-    ctx.fillStyle = (bgType === "white") ? "#64748b" : "#94a3b8";
-    ctx.font = "500 18px 'Plus Jakarta Sans', sans-serif";
-    ctx.fillText("Select an MP4 from your PC to load", w / 2, fgY + fgHeight / 2 + 22);
-    ctx.restore();
   }
 
   // Ensure textElements state initialized
@@ -1247,19 +1982,27 @@ function renderReel() {
 
   if (!state.textElements) {
     state.textElements = {
-      series: { x: 540, y: 320, size: 38, color: "#38bdf8" },
+      series: { x: 540, y: 360, size: 68, lineGap: 16, color: "#ffffff" },
       song: { x: 540, y: defaultSongY, size: 54, color: "#ffffff" },
-      anime: { x: 540, y: defaultAnimeY, size: 32, color: "#38bdf8" },
+      anime: { x: 540, y: defaultAnimeY, size: 32, color: "#ffffff" },
       watermark: { x: defaultWmX, y: defaultWmY, size: 28, color: "#ffffff" },
       subtitles: { x: 540, y: 1690, size: 38, color: "#ffffff" }
     };
   }
-  if (!state.textElements.series) state.textElements.series = { x: 540, y: 320, size: 38, color: "#38bdf8" };
-  if (!state.textElements.series.color) state.textElements.series.color = "#38bdf8";
+  if (!state.textElements.series) state.textElements.series = { x: 540, y: 360, size: 38, lineGap: 12, color: "#ffffff" };
+  // Upgrade the old untouched hook layout, without moving anything the creator
+  // has deliberately dragged, resized, or recolored.
+  if (!state.textElements.series._custom) {
+    if (state.textElements.series.y === undefined || state.textElements.series.y === 320) state.textElements.series.y = 360;
+    if (state.textElements.series.size === undefined || state.textElements.series.size === 28 || state.textElements.series.size === 34) state.textElements.series.size = 38;
+    if (!state.textElements.series.color || state.textElements.series.color.toLowerCase() === "#38bdf8") state.textElements.series.color = "#ffffff";
+  }
+  if (!state.textElements.series.color) state.textElements.series.color = "#ffffff";
+  if (!Number.isFinite(Number(state.textElements.series.lineGap))) state.textElements.series.lineGap = 12;
   if (!state.textElements.song) state.textElements.song = { x: 540, y: defaultSongY, size: 54, color: "#ffffff" };
   if (!state.textElements.song.color) state.textElements.song.color = "#ffffff";
-  if (!state.textElements.anime) state.textElements.anime = { x: 540, y: defaultAnimeY, size: 32, color: "#38bdf8" };
-  if (!state.textElements.anime.color) state.textElements.anime.color = "#38bdf8";
+  if (!state.textElements.anime) state.textElements.anime = { x: 540, y: defaultAnimeY, size: 32, color: "#ffffff" };
+  if (!state.textElements.anime.color) state.textElements.anime.color = "#ffffff";
   if (!state.textElements.creatorBadge) {
     state.textElements.creatorBadge = { x: 540, y: 160, size: 30, color: "#ffffff" };
   }
@@ -1286,107 +2029,9 @@ function renderReel() {
   if (!state.textElements.subtitles.color) state.textElements.subtitles.color = "#ffffff";
   state._textBoxes = state._textBoxes || {};
 
-  // 4. SERIES HEADER TEXT / VIRAL HOOK (Movable & Resizable)
-  if (state.showSeriesText !== false) {
-    const seriesCfg = state.textElements.series;
-    const seriesText = state.seriesFormat.replace("{day}", state.dayNumber);
-    const seriesLines = seriesText.toUpperCase().split("\n");
-    const sSize = seriesCfg.size || 38;
-    const sLineHeight = sSize * 1.25;
-    const sFont = `900 ${sSize}px 'Cabinet Grotesk', sans-serif`;
+  drawStudioText(ctx, bgType, defaultWmX, defaultWmY, 1, true, true, true, null, fgY);
 
-    ctx.save();
-    ctx.textAlign = "center";
-    ctx.font = sFont;
-
-    let maxSeriesW = 0;
-    seriesLines.forEach((line) => {
-      const lw = ctx.measureText(line).width;
-      if (lw > maxSeriesW) maxSeriesW = lw;
-    });
-
-    ctx.shadowColor = (bgType === "white") ? "rgba(0, 0, 0, 0.12)" : "rgba(0, 0, 0, 0.9)";
-    ctx.shadowBlur = (bgType === "white") ? 4 : 14;
-
-    seriesLines.forEach((line, i) => {
-      let lineCol = seriesCfg.color;
-      if (bgType === "white") {
-        if (!lineCol || !isDarkColor(lineCol)) {
-          lineCol = (i === 0) ? "#0284c7" : "#0f172a";
-        }
-      } else {
-        if (!lineCol || isDarkColor(lineCol)) {
-          lineCol = (i === 0) ? "#38bdf8" : "#ffffff";
-        }
-      }
-      ctx.fillStyle = lineCol;
-      ctx.fillText(line, seriesCfg.x, seriesCfg.y + i * sLineHeight);
-    });
-    ctx.restore();
-
-    // Save bounding box for series text
-    state._textBoxes.series = {
-      x: seriesCfg.x - maxSeriesW / 2 - 16,
-      y: seriesCfg.y - sSize + 4,
-      width: maxSeriesW + 32,
-      height: seriesLines.length * sLineHeight + 10
-    };
-
-  } else {
-    delete state._textBoxes.series;
-  }
-
-  // Omit Song Name, Anime Name, and Track Pill overlays from video canvas
-  delete state._textBoxes.song;
-  delete state._textBoxes.anime;
-
-  // 6b. USERNAME WATERMARK (Clean text watermark)
-  const isWmEnabled = !!(state.watermark && state.watermark.enabled);
-  const wmText = (state.watermark && state.watermark.text && state.watermark.text.trim()) 
-    ? state.watermark.text.trim() 
-    : ((el.inputWatermarkText && el.inputWatermarkText.value && el.inputWatermarkText.value.trim()) 
-       ? el.inputWatermarkText.value.trim() 
-       : "lap_lac7");
-  const wmCfg = (state.textElements && state.textElements.watermark) ? state.textElements.watermark : { x: defaultWmX, y: defaultWmY, size: 28, color: "#ffffff" };
-
-  if (isWmEnabled && wmText) {
-    const wmSize = wmCfg.size || 28;
-    const wmFont = `800 ${wmSize}px 'Cabinet Grotesk', 'Space Grotesk', sans-serif`;
-    ctx.save();
-    ctx.font = wmFont;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    let wColor = wmCfg.color;
-    if (bgType === "white") {
-      if (!wColor || !isDarkColor(wColor)) wColor = "#0f172a";
-      ctx.fillStyle = wColor;
-      ctx.shadowColor = "rgba(0, 0, 0, 0.12)";
-      ctx.shadowBlur = 4;
-      ctx.fillText(wmText, wmCfg.x, wmCfg.y);
-    } else {
-      if (!wColor || isDarkColor(wColor)) wColor = "#ffffff";
-      ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
-      ctx.shadowColor = "rgba(0, 0, 0, 0.9)";
-      ctx.shadowBlur = 6;
-      ctx.fillText(wmText, wmCfg.x + 1, wmCfg.y + 2);
-      ctx.fillStyle = wColor;
-      ctx.shadowColor = "transparent";
-      ctx.fillText(wmText, wmCfg.x, wmCfg.y);
-    }
-    const nameW = ctx.measureText(wmText).width;
-    ctx.restore();
-
-    state._textBoxes.watermark = {
-      x: wmCfg.x - 6,
-      y: wmCfg.y - wmSize / 2 - 6,
-      width: nameW + 12,
-      height: wmSize + 12
-    };
-  } else {
-    delete state._textBoxes.watermark;
-  }
-
-  // 6c. CREATOR PROFILE HEADER (avatar above display name, handle, and follow CTA)
+  // 6c. CREATOR PROFILE HEADER (reference-style avatar left, name and handle right)
   const isBadgeEnabled = !!(state.creatorBadge && state.creatorBadge.enabled);
   let badgeTag = (state.creatorBadge && state.creatorBadge.text && state.creatorBadge.text.trim()) 
     ? state.creatorBadge.text.trim() 
@@ -1402,20 +2047,24 @@ function renderReel() {
     const displayName = "Lap_lac7";
     const displaySize = Math.max(16, Math.round(bSize * 0.75));
     const handleSize = Math.max(13, Math.round(bSize * 0.48));
-    const followText = "Follow for more";
-    const handleLine = `${badgeTag}  •  ${followText}`;
+    const handleLine = badgeTag;
 
     ctx.save();
     ctx.font = `800 ${displaySize}px 'Cabinet Grotesk', 'Space Grotesk', sans-serif`;
     const displayW = ctx.measureText(displayName).width;
     ctx.font = `700 ${handleSize}px 'Cabinet Grotesk', 'Space Grotesk', sans-serif`;
     const handleW = ctx.measureText(handleLine).width;
-    const totalW = Math.max(avatarD, displayW, handleW);
-    const totalH = avatarD + spacing + displaySize + Math.round(bSize * 0.12) + handleSize;
+    const textGap = Math.max(3, Math.round(bSize * 0.12));
+    const textW = Math.max(displayW, handleW);
+    const totalW = avatarD + spacing + textW;
+    const totalH = Math.max(avatarD, displaySize + textGap + handleSize);
     const topY = badgeCfg.y - totalH / 2;
-    const avX = badgeCfg.x - avatarD / 2;
+    const leftX = badgeCfg.x - totalW / 2;
+    const avX = leftX;
     const avY = topY;
     const radius = avatarD / 2;
+    const textX = avX + avatarD + spacing;
+    const textTop = topY + (avatarD - displaySize - textGap - handleSize) / 2;
 
     // 1. Draw the circular Laplace avatar at the top.
     if (hasAvatar) {
@@ -1443,37 +2092,37 @@ function renderReel() {
       ctx.restore();
     }
 
-    // 2. Draw the display name and handle beneath the avatar, as in the reference.
-    const nameY = avY + avatarD + spacing + displaySize;
-    const handleY = nameY + handleSize + Math.round(bSize * 0.12);
+    // 2. Keep the real avatar unchanged and place the text beside it, as in the reference.
+    const nameY = textTop + displaySize;
+    const handleY = nameY + handleSize + textGap;
     let bColor = badgeCfg.color;
-    ctx.textAlign = "center";
+    ctx.textAlign = "left";
     ctx.font = `800 ${displaySize}px 'Cabinet Grotesk', 'Space Grotesk', sans-serif`;
     if (bgType === "white") {
       if (!bColor || !isDarkColor(bColor)) bColor = "#0f172a";
       ctx.fillStyle = bColor;
       ctx.shadowColor = "rgba(0, 0, 0, 0.12)";
       ctx.shadowBlur = 4;
-      ctx.fillText(displayName, badgeCfg.x, nameY);
+      ctx.fillText(displayName, textX, nameY);
     } else {
       if (!bColor || isDarkColor(bColor)) bColor = "#ffffff";
       ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
       ctx.shadowColor = "rgba(0, 0, 0, 0.9)";
       ctx.shadowBlur = 6;
-      ctx.fillText(displayName, badgeCfg.x + 1, nameY + 2);
+      ctx.fillText(displayName, textX + 1, nameY + 2);
       ctx.fillStyle = bColor;
       ctx.shadowColor = "transparent";
-      ctx.fillText(displayName, badgeCfg.x, nameY);
+      ctx.fillText(displayName, textX, nameY);
     }
 
     ctx.font = `700 ${handleSize}px 'Cabinet Grotesk', 'Space Grotesk', sans-serif`;
     ctx.fillStyle = bgType === "white" ? "#475569" : "rgba(255, 255, 255, 0.82)";
-    ctx.fillText(handleLine, badgeCfg.x, handleY);
+    ctx.fillText(handleLine, textX, handleY);
 
     ctx.restore();
 
     state._textBoxes.creatorBadge = {
-      x: badgeCfg.x - totalW / 2 - 8,
+      x: leftX - 8,
       y: topY - 6,
       width: totalW + 16,
       height: totalH + 12
@@ -1485,32 +2134,13 @@ function renderReel() {
   // 7. DUAL-LANGUAGE LIVE SUBTITLES
   if (state.showLyrics !== false && state.lyrics && state.lyrics.length > 0) {
     const curTime = (hasVideo && vid && !vid.paused) ? vid.currentTime : (state.currentTime !== undefined ? state.currentTime : (vid ? vid.currentTime : 0));
-    if (typeof updateLyricsActiveState === "function") {
-      updateLyricsActiveState(curTime);
-    }
-    const matchingLines = state.lyrics.filter(l => {
-      const s = parseFloat(l.start) || 0;
-      const e = parseFloat(l.end) || 0;
-      return curTime >= s && curTime <= e;
-    });
-    // Pick the most recent active phrase to prevent lagging onto previous lines
-    let activeLine = matchingLines.length > 0
-      ? matchingLines.reduce((prev, curr) => ((parseFloat(curr.start) || 0) > (parseFloat(prev.start) || 0) ? curr : prev))
-      : null;
-    if (!activeLine) {
-      const orderedLyrics = state.lyrics
-        .filter(line => Number.isFinite(parseFloat(line.start)) && Number.isFinite(parseFloat(line.end)))
-        .slice()
-        .sort((a, b) => parseFloat(a.start) - parseFloat(b.start));
-      const nextLine = orderedLyrics.find(line => parseFloat(line.start) > curTime);
-      const previousLine = orderedLyrics.filter(line => parseFloat(line.end) < curTime).pop();
-      // Leave even short vocal pauses empty. Exported ASS subtitles do the same,
-      // so preview and final video never disagree about a cue's end time.
-    }
+    const activeCue = findActiveSubtitleCue(state.lyrics, curTime);
+    const activeLine = activeCue ? activeCue.cue : null;
+    if (typeof updateLyricsActiveState === "function") updateLyricsActiveState(activeCue ? activeCue.index : -1);
     if (activeLine) {
       const lineStart = parseFloat(activeLine.start) || 0;
       const lineEnd = parseFloat(activeLine.end) || (lineStart + 2.5);
-      const totalDur = Math.max(0.3, lineEnd - lineStart);
+      const totalDur = Math.max(0.001, lineEnd - lineStart);
       const elapsed = Math.max(0, curTime - lineStart);
       const stylePreset = state.subtitleStyle || "minimal";
 
@@ -1538,9 +2168,9 @@ function renderReel() {
         }
       }
 
-      renderDualSubtitles(ctx, jpText, enText, elapsed, totalDur, stylePreset, w, h, activeLine);
+      renderDualSubtitles(ctx, jpText, enText, elapsed, totalDur, stylePreset, w, h, activeLine, state.subtitleAnimation || "auto");
     } else {
-      renderDualSubtitles(ctx, "", "", 0, 1, state.subtitleStyle || "minimal", w, h);
+      renderDualSubtitles(ctx, "", "", 0, 1, state.subtitleStyle || "minimal", w, h, null, state.subtitleAnimation || "auto");
     }
   } else {
     delete state._textBoxes.subtitles;
@@ -1572,6 +2202,8 @@ function renderReel() {
       ctx.restore();
     }
   }
+
+  drawHideAreaGuides(ctx, w, h);
 
   // 9. INTERACTIVE SELECTION BOUNDING BOX & 8 RESIZE HANDLES
   if (state.isTextElementSelected && state.selectedTextElem && state._textBoxes && state._textBoxes[state.selectedTextElem]) {
@@ -1674,33 +2306,50 @@ function parseTime(str) {
   return Math.max(0, parseFloat(str) || 0);
 }
 
-function updateLyricsActiveState(currentTime) {
+function updateLyricsActiveState(activeIndex) {
   if (!el.lyricsTimelineList || el.lyricsTimelineList.classList.contains("hidden")) return;
-  const items = el.lyricsTimelineList.querySelectorAll(".lyric-line-item");
-  let activeItem = null;
-  let maxStart = -1;
-  items.forEach(item => {
-    const s = parseFloat(item.dataset.start) || 0;
-    const e = parseFloat(item.dataset.end) || 0;
-    if (currentTime >= (s - 0.05) && currentTime <= (e + 0.05)) {
-      if (s > maxStart) {
-        maxStart = s;
-        activeItem = item;
-      }
-    }
-  });
-  items.forEach(item => {
-    if (item === activeItem) {
-      if (!item.classList.contains("active")) item.classList.add("active");
-    } else if (item.classList.contains("active")) {
-      item.classList.remove("active");
-    }
-  });
+  if (activeIndex === lastActiveSubtitleListIndex) return;
+  const previous = el.lyricsTimelineList.querySelector(".lyric-line-item.active");
+  if (previous) previous.classList.remove("active");
+  if (activeIndex >= 0) {
+    const active = el.lyricsTimelineList.querySelector(`.lyric-line-item[data-idx="${activeIndex}"]`);
+    if (active) active.classList.add("active");
+  }
+  lastActiveSubtitleListIndex = activeIndex;
 }
 
 function ensureAbsoluteLyricTimes(lyrics) {
   // Preserve true audio timestamps across the full video
   return lyrics || [];
+}
+
+function mergeOrphanSubtitleFragments(lyrics) {
+  if (!Array.isArray(lyrics)) return lyrics;
+  const connectives = /^(if|and|but|or|so|yet|then|that|the|a|an|to)$/i;
+  const join = (prefix, phrase) => {
+    const first = String(prefix || "").trim();
+    const second = String(phrase || "").trim();
+    if (!first) return second;
+    if (!second || second.toLowerCase().startsWith(`${first.toLowerCase()} `)) return second || first;
+    return `${first} ${second}`;
+  };
+  for (let index = 0; index < lyrics.length - 1; index += 1) {
+    const cue = lyrics[index];
+    const following = lyrics[index + 1];
+    const spoken = String(cue && (cue.text_jp || cue.text_en || cue.text) || "").trim();
+    const gap = Number(following && following.start) - Number(cue && cue.end);
+    if (!connectives.test(spoken) || !Number.isFinite(gap) || gap > 0.35) continue;
+    following.start = cue.start;
+    ["text", "text_jp", "text_en", "text_romaji"].forEach(field => {
+      following[field] = join(cue[field], following[field]);
+    });
+    // The old word arrays no longer describe the merged phrase or its bounds.
+    ["words_jp", "words_en", "_cachedWordsJp", "_cachedWordsEn", "timing_source"].forEach(field => delete following[field]);
+    lyrics.splice(index, 1);
+    subtitleCueCache.source = null;
+    index -= 1;
+  }
+  return lyrics;
 }
 
 function renderLyricsList(lyrics) {
@@ -1713,8 +2362,14 @@ function renderLyricsList(lyrics) {
     return;
   }
 
+  // Repair the old saved one-word flash cues too, not only newly generated cues.
+  mergeOrphanSubtitleFragments(lyrics);
+
   // Sort by start timestamp cleanly
   lyrics.sort((a, b) => (parseFloat(a.start) || 0) - (parseFloat(b.start) || 0));
+  subtitleCueCache.source = null;
+  // The DOM list is rebuilt below, so its active-row cache must be rebuilt too.
+  lastActiveSubtitleListIndex = -1;
 
   if (el.lyricsEmptyHint) el.lyricsEmptyHint.classList.add("hidden");
   if (el.lyricsTimelineList) {
@@ -1755,9 +2410,9 @@ function renderLyricsList(lyrics) {
 function getTimelineMetrics() {
   const container = el.timelineScrollContainer;
   const viewportW = (container && container.clientWidth > 0) ? container.clientWidth : Math.max(600, window.innerWidth - 380);
-  const dur = Math.max(0.1, (el.hiddenVideo && isFinite(el.hiddenVideo.duration) && el.hiddenVideo.duration > 0)
+  const dur = Math.max(0.1, state._imagePreviewDuration || ((el.hiddenVideo && isFinite(el.hiddenVideo.duration) && el.hiddenVideo.duration > 0)
     ? el.hiddenVideo.duration
-    : ((state.videoMeta && isFinite(state.videoMeta.duration) && state.videoMeta.duration > 0) ? state.videoMeta.duration : 35.0));
+    : ((state.videoMeta && isFinite(state.videoMeta.duration) && state.videoMeta.duration > 0) ? state.videoMeta.duration : 35.0)));
   const zoom = Math.max(1, state.timelineZoom || 1);
   // Fit the whole duration 100% into the visible timeline width without horizontal scrolling
   const contentW = (zoom > 1.01) ? Math.round(viewportW * zoom) : viewportW;
@@ -1870,25 +2525,27 @@ const thumbnailCache = new Map();
 let isGeneratingThumbnails = false;
 let activeDrag = null;
 
+function getTimelineThumbnailPlan() {
+  const { contentW, dur } = getTimelineMetrics();
+  if (!Number.isFinite(dur) || dur <= 0) return { contentW, dur: 0, times: [] };
+  // The same timestamps must drive both extraction and drawing.  Otherwise
+  // most tiles have no exact cached image and appear as empty dark blocks.
+  const count = Math.min(18, Math.max(6, Math.ceil(contentW / 96)));
+  const interval = dur / count;
+  return {
+    contentW,
+    dur,
+    times: Array.from({ length: count }, (_, index) => Math.min(dur - 0.05, index * interval))
+  };
+}
+
 async function generateThumbnailStrip() {
   const vid = el.hiddenVideo;
   if (!vid || !vid.src || isGeneratingThumbnails) return;
-  const dur = vid.duration;
-  if (!dur || isNaN(dur)) return;
+  const plan = getTimelineThumbnailPlan();
+  if (!plan.times.length) return;
 
-  const { contentW } = getTimelineMetrics();
-  // Lightweight thumbnail count (max 10) to avoid HTTP connection pool saturation
-  const thumbCount = Math.min(10, Math.max(6, Math.ceil(contentW / 120)));
-  const interval = dur / thumbCount;
-
-  let needsExtraction = false;
-  for (let i = 0; i < thumbCount; i++) {
-    const key = Math.round(i * interval * 10) / 10;
-    if (!thumbnailCache.has(key)) {
-      needsExtraction = true;
-      break;
-    }
-  }
+  const needsExtraction = plan.times.some((time) => !thumbnailCache.has(Math.round(time * 10) / 10));
   if (!needsExtraction) {
     drawThumbnailStrip();
     return;
@@ -1906,26 +2563,23 @@ async function generateThumbnailStrip() {
   offCanvas.height = 90;
   const offCtx = offCanvas.getContext("2d");
 
-  await new Promise((resolve) => {
-    offVideo.addEventListener("loadeddata", resolve, { once: true });
-    offVideo.addEventListener("error", resolve, { once: true });
-    setTimeout(resolve, 800);
+  const loaded = await new Promise((resolve) => {
+    offVideo.addEventListener("loadeddata", () => resolve(true), { once: true });
+    offVideo.addEventListener("error", () => resolve(false), { once: true });
+    setTimeout(() => resolve(false), 2500);
   });
 
-  for (let i = 0; i < thumbCount; i++) {
-    // If playback started, abort thumbnail generation immediately to free resources
-    if (state.isPlaying) break;
-
-    const t = Math.min(dur - 0.05, i * interval);
+  for (const t of loaded ? plan.times : []) {
     const key = Math.round(t * 10) / 10;
     if (thumbnailCache.has(key)) continue;
 
     try {
       offVideo.currentTime = t;
-      await new Promise((resolve) => {
-        offVideo.addEventListener("seeked", resolve, { once: true });
-        setTimeout(resolve, 150);
+      const seeked = await new Promise((resolve) => {
+        offVideo.addEventListener("seeked", () => resolve(true), { once: true });
+        setTimeout(() => resolve(offVideo.readyState >= 2), 1000);
       });
+      if (!seeked || offVideo.readyState < 2) continue;
       const vW = offVideo.videoWidth || 160;
       const vH = offVideo.videoHeight || 90;
       const vRatio = vW / vH;
@@ -1941,12 +2595,13 @@ async function generateThumbnailStrip() {
       offCtx.drawImage(offVideo, sx, sy, sw, sh, 0, 0, offCanvas.width, offCanvas.height);
       const imgData = offCanvas.toDataURL("image/jpeg", 0.60);
       const img = new Image();
+      // Data URL decoding is asynchronous.  Redraw when each image actually
+      // becomes usable instead of leaving its tile black forever.
+      img.addEventListener("load", drawThumbnailStrip, { once: true });
       img.src = imgData;
       thumbnailCache.set(key, img);
       drawThumbnailStrip();
-    } catch (_) {
-      break;
-    }
+    } catch (_) { /* Skip this timestamp; later timeline frames can still load. */ }
   }
 
   try {
@@ -1960,7 +2615,8 @@ async function generateThumbnailStrip() {
 function drawThumbnailStrip() {
   const canvas = el.thumbnailCanvas;
   if (!canvas) return;
-  const { contentW, dur } = getTimelineMetrics();
+  const plan = getTimelineThumbnailPlan();
+  const { contentW, dur } = plan;
   const dpr = window.devicePixelRatio || 1;
   const h = 54;
 
@@ -1979,21 +2635,19 @@ function drawThumbnailStrip() {
   ctxThumb.fillStyle = "#141414";
   ctxThumb.fillRect(0, 0, contentW, h);
 
-  const thumbWidth = Math.round(h * (16 / 9)); // 96px for 16:9 widescreen
-  const thumbCount = Math.max(6, Math.ceil(contentW / thumbWidth));
-  const interval = dur / thumbCount;
+  const thumbCount = plan.times.length;
 
   for (let i = 0; i < thumbCount; i++) {
     const x = Math.round(i * (contentW / thumbCount));
     const nextX = Math.round((i + 1) * (contentW / thumbCount));
     const w = nextX - x;
-    const t = i * interval;
+    const t = plan.times[i];
     const key = Math.round(t * 10) / 10;
     let img = thumbnailCache.get(key);
-    if (!img || !img.complete) {
+    if (!img || !img.complete || !img.naturalWidth) {
       let closestDiff = Infinity;
       for (const [k, v] of thumbnailCache.entries()) {
-        if (v && v.complete) {
+        if (v && v.complete && v.naturalWidth) {
           const diff = Math.abs(k - key);
           if (diff < closestDiff && diff <= 3.0) {
             closestDiff = diff;
@@ -2003,7 +2657,7 @@ function drawThumbnailStrip() {
       }
     }
 
-    if (img && img.complete) {
+    if (img && img.complete && img.naturalWidth) {
       const imgW = img.naturalWidth || img.width || 160;
       const imgH = img.naturalHeight || img.height || 90;
       const imgRatio = imgW / imgH;
@@ -2134,6 +2788,7 @@ function updatePlayheadUI(currentTime) {
 }
 
 function updateTimelineUI() {
+  if (audioAudition.selection && audioAudition.selection !== audioSelectionKey()) resetAudioAudition();
   const { contentW } = getTimelineMetrics();
 
   if (el.timelineScrollContainer) {
@@ -2151,6 +2806,7 @@ function updateTimelineUI() {
   const startPx = timeToPx(state.startTime);
   const endPx = timeToPx(state.endTime);
   const rangeW = Math.max(4, endPx - startPx);
+  updateTrimNudgeControls(startPx, endPx, contentW);
 
   if (el.scrubberRange) {
     el.scrubberRange.style.left = `${startPx}px`;
@@ -2201,6 +2857,7 @@ function updateTimelineUI() {
   drawRulerCanvas();
   drawThumbnailStrip();
   drawWaveformCanvas();
+  if (typeof window !== "undefined" && window.musicStudio) window.musicStudio.syncTimeline();
 
   // Dynamically update in-clip highlights on subtitle list
   if (el.lyricsTimelineList && !el.lyricsTimelineList.classList.contains("hidden")) {
@@ -2235,6 +2892,34 @@ function stepFrame(numFrames) {
 let playRequestId = 0;
 let playPending = false;
 let isRecoveringVideo = false;
+const MAX_SONG_WINDOW_SCALE = 1.40;
+const MAX_SONG_WINDOW_INSET = 180;
+
+function getSongWindowScale(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(MAX_SONG_WINDOW_SCALE, Math.max(0.10, parsed)) : 1.0;
+}
+
+function getSongWindowInset(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(MAX_SONG_WINDOW_INSET, Math.max(0, parsed)) : 0;
+}
+
+function getVideoFrameGeometry(sourceWidth, sourceHeight, canvasWidth = 1080, canvasHeight = 1920, scale = 1, verticalOffset = 0) {
+  const aspect = sourceWidth > 0 && sourceHeight > 0 ? sourceWidth / sourceHeight : 16 / 9;
+  const fitWidth = Math.min(canvasWidth, canvasHeight * aspect);
+  const width = Math.max(2, Math.round(fitWidth * getSongWindowScale(scale) / 2) * 2);
+  const height = Math.max(2, Math.round(fitWidth / aspect * getSongWindowScale(scale) / 2) * 2);
+  const offset = Number.isFinite(Number(verticalOffset)) ? Number(verticalOffset) : 0;
+  return {width, height, x: (canvasWidth - width) / 2, y: (canvasHeight - height) / 2 + offset};
+}
+
+function centerVideoFrame() {
+  state.adjustments = {...state.adjustments, scale: 1, verticalOffset: 0, windowInset: 0};
+  if (typeof syncAdjustmentSliders === "function") syncAdjustmentSliders();
+  renderReel();
+  saveProjectState();
+}
 
 async function recoverVideoPipeline(seekTimeAfter) {
   if (isRecoveringVideo) return;
@@ -2247,14 +2932,16 @@ async function recoverVideoPipeline(seekTimeAfter) {
     if (el.btnPlayPause) el.btnPlayPause.textContent = "▶";
     return;
   }
+  if (state._compatibilityAttemptPath === targetPath) return;
 
   isRecoveringVideo = true;
+  state._compatibilityAttemptPath = targetPath;
   showToast("⚡ Auto-optimizing video for instant scrubbing & playback...");
   try {
     const cRes = await fetch("/api/video/ensure-compatible", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ file_path: targetPath, force: true })
+      body: JSON.stringify({ file_path: targetPath, force: false })
     });
     if (cRes.ok) {
       const cData = await cRes.json();
@@ -2313,6 +3000,8 @@ function playVideo() {
   const dur = (vid && isFinite(vid.duration) && vid.duration > 0) ? vid.duration : ((state.videoMeta && state.videoMeta.duration) || 35.0);
   const clipStart = state.startTime || 0;
   const clipEnd = (state.endTime && state.endTime > clipStart) ? state.endTime : Math.min(dur, clipStart + 35.0);
+  const useEnhancedAudio = enhancedPlaybackReady();
+  if (!useEnhancedAudio && el.audioMasterPlayer) el.audioMasterPlayer.pause();
 
   // If playhead is outside the clip range or not at target start, silence audio until seek to clipStart finishes
   const needsRewind = (vid.currentTime < clipStart - 0.05 || vid.currentTime >= clipEnd - 0.1 || Math.abs(vid.currentTime - (state.currentTime !== undefined ? state.currentTime : clipStart)) > 0.08);
@@ -2333,7 +3022,7 @@ function playVideo() {
       vid.removeEventListener("seeked", onSeekFinished);
       clearTimeout(safetyTimer);
       vid.volume = 0.0;
-      if (!prevMuted) {
+      if (!prevMuted && !useEnhancedAudio) {
         vid.muted = false;
       }
       if (currentReq === playRequestId && state.isPlaying) {
@@ -2342,7 +3031,7 @@ function playVideo() {
     };
     const safetyTimer = setTimeout(() => {
       vid.volume = 0.0;
-      if (!prevMuted) vid.muted = false;
+      if (!prevMuted && !useEnhancedAudio) vid.muted = false;
       onSeekFinished();
     }, 350);
     vid.addEventListener("seeked", onSeekFinished, { once: true });
@@ -2375,8 +3064,13 @@ function playVideo() {
       return;
     }
 
-    const targetVol = (state.smartLoop && state.isLooping && state.currentTime - clipStart < 0.22) ? 0.2 : 1.0;
+    const targetVol = useEnhancedAudio ? 0 : ((state.smartLoop && state.isLooping && state.currentTime - clipStart < 0.22) ? 0.2 : 1.0);
+    vid.muted = useEnhancedAudio;
     vid.volume = 0.0;
+    // Start the separate mastered track during the Play click itself.  Starting
+    // it later in a timer loses the browser's user-gesture permission and can
+    // leave the muted video with no audible track.
+    if (useEnhancedAudio) void playEnhancedAudioWithVideo();
     const playPromise = vid.play();
     if (playPromise !== undefined) {
       playPromise.then(() => {
@@ -2389,7 +3083,13 @@ function playVideo() {
         if (el.btnPlayPause) el.btnPlayPause.textContent = "❚❚";
         setTimeout(() => {
           if (currentReq === playRequestId && state.isPlaying) {
-            vid.volume = targetVol;
+            if (useEnhancedAudio) {
+              vid.muted = true;
+              vid.volume = 0;
+            } else {
+              vid.muted = false;
+              vid.volume = typeof window !== "undefined" && window.musicStudio ? window.musicStudio.originalGain(targetVol) : targetVol;
+            }
           }
         }, 25);
       }).catch(err => {
@@ -2453,6 +3153,28 @@ function playVideo() {
   attemptPlay();
 }
 
+function handlePreviewEnded() {
+  // At the actual file end the browser has already paused, so seeking alone
+  // cannot keep the default clip loop running. Resume through the usual player
+  // path, which also synchronizes the selected music and enhanced audio.
+  if (state.isLooping !== false && el.hiddenVideo?.src) {
+    state.currentTime = Math.max(0, Number(state.startTime) || 0);
+    state.playbackStartPos = state.currentTime;
+    playVideo();
+    return;
+  }
+  pauseVideo();
+}
+
+function resumePreviewAfterLoopSeek(requestId) {
+  // Some browsers pause at EOF before dispatching timeupdate, then cancel
+  // ended when we seek back. Resume that native pause, but never undo a user
+  // pause or a source change (both invalidate the playback request).
+  if (requestId !== playRequestId || !el.hiddenVideo?.paused) return;
+  state.currentTime = Math.max(0, Number(state.startTime) || 0);
+  playVideo();
+}
+
 function pauseVideo() {
   playRequestId++;
   playPending = false;
@@ -2461,6 +3183,9 @@ function pauseVideo() {
   const vid = el.hiddenVideo;
   if (vid) {
     try { vid.pause(); } catch (_) {}
+  }
+  if (el.audioMasterPlayer) {
+    try { el.audioMasterPlayer.pause(); } catch (_) {}
   }
 }
 
@@ -2484,13 +3209,54 @@ function togglePlay() {
   }
 }
 
-function toggleLoop() {
-  state.isLooping = !state.isLooping;
-  if (el.btnLoopClip) {
-    el.btnLoopClip.classList.toggle("active", state.isLooping);
+function updateTrimNudgeControls(startPx, endPx, contentW) {
+  if (!el.trimNudgeStart || !el.trimNudgeEnd) return;
+  const width = 36;
+  // Each 6px handle extends into the selection; center arrows on the bar itself.
+  const left = startPx + 3 - width / 2;
+  const right = endPx - 3 - width / 2;
+  el.trimNudgeEnd.style.top = right - left < width + 2 ? "43px" : "23px";
+  const {dur} = getTimelineMetrics();
+  for (const [group, position] of [[el.trimNudgeStart, left], [el.trimNudgeEnd, right]]) {
+    group.style.left = `${position}px`;
+    for (const button of group.querySelectorAll("button")) {
+      const start = button.dataset.edge === "start";
+      const earlier = Number(button.dataset.direction) < 0;
+      button.disabled = !state.videoPath || !(dur > 0) || (start
+        ? earlier ? state.startTime <= 0 : state.startTime >= state.endTime - 0.05
+        : earlier ? state.endTime <= state.startTime + 0.05 : state.endTime >= dur);
+    }
   }
-  showToast(state.isLooping ? "🔁 Clip Looping: Enabled" : "Clip Looping: Disabled");
+}
+
+function nudgeTimelineTrim(edge, direction, seek) {
+  const {dur} = getTimelineMetrics();
+  if (!state.videoPath || !(dur > 0) || !["start", "end"].includes(edge) || ![-1, 1].includes(direction)) return;
+  const key = edge === "start" ? "startTime" : "endTime";
+  const lower = edge === "start" ? 0 : state.startTime + 0.05;
+  const upper = edge === "start" ? state.endTime - 0.05 : dur;
+  const target = Math.round(Math.max(lower, Math.min(upper, state[key] + direction * 0.5)) * 1000) / 1000;
+  if (target === state[key]) return;
+  pauseVideo();
+  state[key] = target;
+  state.currentTime = target;
+  state.playbackStartPos = target;
+  seek(target, true);
+  updateTimelineUI();
+  updatePlayheadUI(target);
+  renderReel();
   saveProjectState();
+}
+
+function setupTrimNudgeControls(seek) {
+  for (const group of [el.trimNudgeStart, el.trimNudgeEnd]) {
+    if (!group) continue;
+    group.addEventListener("pointerdown", event => event.stopPropagation());
+    group.addEventListener("click", event => event.stopPropagation());
+    for (const button of group.querySelectorAll("button")) {
+      button.addEventListener("click", () => nudgeTimelineTrim(button.dataset.edge, Number(button.dataset.direction), seek));
+    }
+  }
 }
 
 function setupTimeline() {
@@ -2512,6 +3278,7 @@ function setupTimeline() {
       vid.currentTime = target;
       state.currentTime = target;
       updatePlayheadUI(target);
+      syncEnhancedAudioToVideo(true);
     } catch (_) {}
   }
 
@@ -2528,8 +3295,10 @@ function setupTimeline() {
     if (!seekTimer) seekTimer = setTimeout(commitPendingSeek, 40);
   }
 
+  setupTrimNudgeControls(queueSeek);
+
   vid.addEventListener("loadedmetadata", () => {
-    const dur = (vid && isFinite(vid.duration) && vid.duration > 0) ? vid.duration : ((state.videoMeta && state.videoMeta.duration) || 0);
+    const dur = state._imagePreviewDuration || ((vid && isFinite(vid.duration) && vid.duration > 0) ? vid.duration : ((state.videoMeta && state.videoMeta.duration) || 0));
     if (el.timeDuration) el.timeDuration.textContent = formatTime(dur, 0);
     if (state.endTime > dur) {
       state.endTime = dur;
@@ -2551,7 +3320,7 @@ function setupTimeline() {
     updatePlayheadUI(state.startTime);
     thumbnailCache.clear();
     generateThumbnailStrip();
-    if (!state.aiAnalysis || state.aiAnalysis.isInitialPlaceholder) {
+    if (state._preserveImageEditsGeneration !== state.sourceGeneration && (!state.aiAnalysis || state.aiAnalysis.isInitialPlaceholder)) {
       initDynamicClipForVideo(dur);
     }
   });
@@ -2561,6 +3330,12 @@ function setupTimeline() {
     if (vid.seeking) return;
     state.currentTime = vid.currentTime;
     updatePlayheadUI(state.currentTime);
+    const useEnhancedAudio = enhancedPlaybackReady();
+    if (useEnhancedAudio) {
+      vid.muted = true;
+      vid.volume = 0;
+      syncEnhancedAudioToVideo();
+    }
 
     if (state.isPlaying) {
       if (state.isLooping) {
@@ -2580,20 +3355,30 @@ function setupTimeline() {
         const clipEnd = (state.endTime && state.endTime > state.startTime) ? state.endTime : (vid.duration || 35);
         if (state.currentTime >= clipEnd) {
           try {
+            const loopRequestId = playRequestId;
             vid.muted = true;
             vid.volume = 0.0;
             vid.currentTime = state.startTime;
             state.playbackStartPos = state.startTime;
             const onLoopSeeked = () => {
               vid.removeEventListener("seeked", onLoopSeeked);
-              vid.muted = false;
-              vid.volume = state.smartLoop ? 0.15 : 1.0;
+              if (loopRequestId !== playRequestId) return;
+              if (enhancedPlaybackReady()) {
+                vid.muted = true;
+                vid.volume = 0;
+                syncEnhancedAudioToVideo(true);
+                playEnhancedAudioWithVideo();
+              } else {
+                vid.muted = false;
+                vid.volume = typeof window !== "undefined" && window.musicStudio ? window.musicStudio.originalGain(state.smartLoop ? 0.15 : 1.0) : (state.smartLoop ? 0.15 : 1.0);
+              }
+              resumePreviewAfterLoopSeek(loopRequestId);
             };
             vid.addEventListener("seeked", onLoopSeeked, { once: true });
             setTimeout(() => {
-              if (vid.muted) {
+              if (loopRequestId === playRequestId && vid.muted && !enhancedPlaybackReady()) {
                 vid.muted = false;
-                vid.volume = state.smartLoop ? 0.15 : 1.0;
+                vid.volume = typeof window !== "undefined" && window.musicStudio ? window.musicStudio.originalGain(state.smartLoop ? 0.15 : 1.0) : (state.smartLoop ? 0.15 : 1.0);
               }
             }, 300);
           } catch (_) {}
@@ -2620,12 +3405,14 @@ function setupTimeline() {
       state.isPlaying = false;
       if (el.btnPlayPause) el.btnPlayPause.textContent = "▶";
     }
+    if (el.audioMasterPlayer) el.audioMasterPlayer.pause();
   });
 
   vid.addEventListener("seeked", () => {
     if (pendingSeekTime !== null) {
       commitPendingSeek();
     }
+    syncEnhancedAudioToVideo(true);
     if (vid && vid.videoWidth > 0) cachePreviewFrame(vid);
     renderReel();
   });
@@ -2642,13 +3429,9 @@ function setupTimeline() {
     renderReel();
   });
 
-  vid.addEventListener("ended", () => {
-    state.isPlaying = false;
-    if (el.btnPlayPause) el.btnPlayPause.textContent = "▶";
-  });
+  vid.addEventListener("ended", handlePreviewEnded);
 
   if (el.btnPlayPause) el.btnPlayPause.addEventListener("click", togglePlay);
-  if (el.btnLoopClip) el.btnLoopClip.addEventListener("click", toggleLoop);
   if (el.btnPrevFrame) el.btnPrevFrame.addEventListener("click", () => stepFrame(-1));
   if (el.btnNextFrame) el.btnNextFrame.addEventListener("click", () => stepFrame(1));
 
@@ -3104,13 +3887,11 @@ function setupTimeline() {
 
   // Keyboard Shortcuts
   window.addEventListener("keydown", (e) => {
+    if (document.getElementById("view-history")?.classList.contains("active")) return;
     if (["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
     if (e.code === "Space") {
       e.preventDefault();
       togglePlay();
-    } else if (e.code === "KeyL") {
-      e.preventDefault();
-      toggleLoop();
     } else if (e.code === "ArrowLeft") {
       e.preventDefault();
       stepFrame(e.shiftKey ? -10 : -1);
@@ -3124,7 +3905,351 @@ function setupTimeline() {
 // -------------------------------------------------------------
 // YOUTUBE DOWNLOAD & IMPORT ENGINE
 // -------------------------------------------------------------
+function setupUrlShortcuts(input, clearButton, kind = "video", plainText = false) {
+  if (!input) return;
+  let revision = 0;
+  let readingClipboard = false;
+  let clipboardBlocked = false;
+  input.addEventListener("input", () => { revision++; });
+  const replaceUrl = value => {
+    input.value = value;
+    input.dispatchEvent(new Event("input", {bubbles: true}));
+    input.focus();
+  };
+  clearButton?.addEventListener("click", () => replaceUrl(""));
+  input.addEventListener("contextmenu", async event => {
+    if (event.shiftKey || clipboardBlocked || !navigator.clipboard?.readText) return;
+    event.preventDefault();
+    if (readingClipboard) return;
+    readingClipboard = true;
+    const requestedRevision = revision;
+    const previousValue = input.value;
+    try {
+      const copied = await navigator.clipboard.readText();
+      const text = plainText ? copied : copied.trim();
+      if (requestedRevision !== revision || input.value !== previousValue) return;
+      if (!text.trim()) { showToast(`Clipboard is empty. Copy ${plainText ? "hook text" : `a ${kind} link`} first.`); return; }
+      if (plainText) { replaceUrl(text); return; }
+      let link;
+      try { link = new URL(text); } catch (_) { /* Show the same useful message below. */ }
+      if (!link || !["http:", "https:"].includes(link.protocol)) {
+        showToast(`Copy a ${kind} URL first, then right-click to paste it.`);
+        return;
+      }
+      replaceUrl(text);
+    } catch (error) {
+      clipboardBlocked = true;
+      showToast("Clipboard access is blocked. Right-click again for the Paste menu, or press Ctrl+V.");
+    } finally {
+      readingClipboard = false;
+    }
+  });
+}
+
+function setupVideoUrlShortcuts() {
+  setupUrlShortcuts(el.inputYtUrl, document.getElementById("btn-clear-video-url"));
+  setupUrlShortcuts(document.getElementById("music-url"), document.getElementById("btn-clear-music-url"), "music");
+  setupUrlShortcuts(el.inputSeriesText, document.getElementById("btn-clear-hook-text"), "hook", true);
+}
+
+function showDownloadedImages(files) {
+  const results = document.getElementById("image-download-results");
+  if (!results) return;
+  results.replaceChildren();
+  const heading = document.createElement("p");
+  heading.textContent = `${files.length} image${files.length === 1 ? "" : "s"} saved. The first loads in Studio. Choose another below.`;
+  results.append(heading);
+  for (const file of files) {
+    const item = document.createElement("div");
+    item.className = "image-download-item";
+    const link = document.createElement("a");
+    const url = `/api/images/file?path=${encodeURIComponent(file.file_path)}`;
+    link.className = "image-download-choice";
+    link.href = url;
+    link.download = file.filename;
+    const image = document.createElement("img");
+    image.src = `${url}&download=false`;
+    image.alt = "";
+    image.loading = "lazy";
+    const label = document.createElement("span");
+    label.textContent = `↓ ${file.filename} · ${file.width} × ${file.height}`;
+    link.append(image, label);
+    const use = document.createElement("button");
+    use.type = "button";
+    use.className = "btn btn-sm";
+    use.textContent = "Use in Studio";
+    use.addEventListener("click", async () => {
+      if (el.btnYtDownload.disabled) return;
+      use.disabled = true;
+      el.btnYtDownload.disabled = true;
+      try { await loadDownloadedImage(file); }
+      catch (error) {
+        el.ytProgressLabel.textContent = `Error: ${error.message}`;
+        showToast(`Image import failed: ${error.message}`);
+      } finally {
+        use.disabled = false;
+        el.btnYtDownload.disabled = false;
+        el.btnYtText.textContent = "⚡ Download & Load";
+      }
+    });
+    item.append(link, use);
+    results.append(item);
+  }
+  results.classList.remove("hidden");
+}
+
+async function waitForImageTask(taskId, timeoutMs = 5 * 60 * 1000) {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    if (Date.now() > deadline) throw new Error("Image task timed out. Try again.");
+    await new Promise(resolve => setTimeout(resolve, 800));
+    const response = await fetch(`/api/images/status/${encodeURIComponent(taskId)}`);
+    const task = await response.json();
+    if (!response.ok) throw new Error(task.detail || "Could not check image progress");
+    const progress = Math.max(0, Math.min(100, Number(task.progress) || 0));
+    el.ytProgressBar.style.width = `${progress}%`;
+    el.ytProgressPercent.textContent = `${Math.round(progress)}%`;
+    el.ytProgressLabel.textContent = task.message || "Preparing image…";
+    if (task.status === "error") throw new Error(task.message || "Image task failed");
+    if (task.status === "completed") return task;
+  }
+}
+
+function syncImageDurationInputs(duration) {
+  for (const id of ["input-image-duration", "input-local-image-duration"]) {
+    const input = document.getElementById(id);
+    if (input) input.value = String(duration);
+  }
+  document.getElementById("image-duration-row")?.classList.toggle("hidden", !isLoadedStudioImage());
+}
+
+function imageDurationStatus(message) {
+  if (el.ytProgressLabel) el.ytProgressLabel.textContent = message;
+  const local = document.getElementById("local-image-status");
+  if (local) local.textContent = message;
+}
+
+async function recoverLoadedImageSource() {
+  if (state.imageSourcePath || !state.videoPath || state.videoPath.startsWith("blob:")) return;
+  const generation = state.sourceGeneration;
+  const response = await fetch(`/api/images/source?path=${encodeURIComponent(state.videoPath)}`);
+  if (response.status === 404) return; // Ordinary videos have no image source.
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || "Could not find the loaded image. Restart Vibe Editor and refresh Studio.");
+  if (generation !== state.sourceGeneration) return;
+  state.imageSourcePath = data.source_image_path || "";
+  state.imageDuration = Number(data.duration) || null;
+}
+
+let imageDurationTimer = null;
+let imageDurationRequest = null;
+let imageDurationRunning = false;
+let imageDurationRevision = 0;
+
+function isLoadedStudioImage() {
+  return !!state.imageSourcePath || /(?:^|[\\/])images[\\/]studio[\\/][^\\/]+\.mp4$/i.test(state.videoPath || "");
+}
+
+function previewImageDuration(duration) {
+  if (!isLoadedStudioImage()) return;
+  if (!state._imageDurationOriginalRange) {
+    state._imageDurationOriginalRange = {startTime: state.startTime, endTime: state.endTime};
+  }
+  pauseVideo();
+  state._imagePreviewDuration = duration;
+  state.startTime = 0;
+  state.endTime = duration;
+  state.currentTime = Math.max(0, Math.min(Number(state.currentTime) || 0, duration));
+  if (el.timeDuration) el.timeDuration.textContent = formatTime(duration, 0);
+  updateTimelineUI();
+  updatePlayheadUI(state.currentTime);
+  renderReel();
+}
+
+function finishImageDurationPreview(rollback = false) {
+  const range = state._imageDurationOriginalRange;
+  if (rollback && range) {
+    state.startTime = range.startTime;
+    state.endTime = range.endTime;
+    state.currentTime = Math.min(Number(state.currentTime) || 0, Number(range.endTime) || 0);
+  }
+  state._imagePreviewDuration = null;
+  state._imageDurationOriginalRange = null;
+  if (state.imageDuration && el.timeDuration) el.timeDuration.textContent = formatTime(state.imageDuration, 0);
+  updateTimelineUI();
+  updatePlayheadUI(Number(state.currentTime) || 0);
+  renderReel();
+}
+
+function setupImageDurationControls() {
+  for (const id of ["input-image-duration", "input-local-image-duration"]) {
+    const input = document.getElementById(id);
+    if (!input) continue;
+    const update = () => {
+      if (imageDurationTimer !== null) clearTimeout(imageDurationTimer);
+      imageDurationTimer = null;
+      const duration = Number(input.value);
+      imageDurationRevision++;
+      imageDurationRequest = null;
+      if (!input.value.trim() || !Number.isFinite(duration) || duration < 1 || duration > 300) {
+        state._imageDurationError = isLoadedStudioImage();
+        imageDurationStatus("Choose an image duration from 1 to 300 seconds.");
+        return;
+      }
+      state._imageDurationError = false;
+      syncImageDurationInputs(duration);
+      previewImageDuration(duration);
+      imageDurationRequest = {duration, generation: state.sourceGeneration, revision: imageDurationRevision};
+      imageDurationTimer = setTimeout(() => {
+        imageDurationTimer = null;
+        void updateLoadedImageDuration();
+      }, 350);
+    };
+    input.addEventListener("input", update);
+    input.addEventListener("change", update);
+  }
+}
+
+async function updateLoadedImageDuration() {
+  if (imageDurationRunning) return;
+  imageDurationRunning = true;
+  try {
+    while (imageDurationRequest) {
+      const request = imageDurationRequest;
+      imageDurationRequest = null;
+      if (request.generation !== state.sourceGeneration) continue;
+      let loadingPath = null;
+      let loadingGeneration = null;
+      try {
+        await recoverLoadedImageSource();
+        if (request.generation !== state.sourceGeneration || request.revision !== imageDurationRevision) continue;
+        if (!state.imageSourcePath) {
+          imageDurationStatus("Duration will apply to the next image you load.");
+          continue;
+        }
+        if (request.duration === state.imageDuration) { finishImageDurationPreview(); continue; }
+        imageDurationStatus("Updating image duration…");
+        const response = await fetch("/api/images/import", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({file_path: state.imageSourcePath, duration: request.duration})
+        });
+        const started = await response.json();
+        if (!response.ok) throw new Error(started.detail || "Could not update image duration. Restart Vibe Editor and refresh Studio.");
+        const task = await waitForImageTask(started.task_id, 11 * 60 * 1000);
+        if (request.generation !== state.sourceGeneration || request.revision !== imageDurationRevision) continue;
+        if (!task.file_path) throw new Error("Image duration update returned no Studio source. Try again.");
+        const source = state.imageSourcePath;
+        pauseVideo();
+        loadingPath = task.file_path;
+        loadingGeneration = state.sourceGeneration + 1;
+        await loadFile(task.file_path, state.videoTitle || task.title, null, {preserveEdits: true});
+        if (state.videoPath !== task.file_path) continue;
+        state.imageSourcePath = task.source_image_path || source;
+        state.imageDuration = request.duration;
+        if (request.revision !== imageDurationRevision) {
+          state._imageDurationOriginalRange = {startTime: 0, endTime: request.duration};
+          if (state._imagePreviewDuration) previewImageDuration(state._imagePreviewDuration);
+          continue;
+        }
+        finishImageDurationPreview();
+        syncImageDurationInputs(request.duration);
+        saveProjectState();
+        renderReel();
+        imageDurationStatus(`Image updated in Studio · ${request.duration}s`);
+      } catch (error) {
+        const ownReload = loadingPath && state.videoPath === loadingPath && state.sourceGeneration === loadingGeneration;
+        if ((!ownReload && request.generation !== state.sourceGeneration) || request.revision !== imageDurationRevision) continue;
+        state._imageDurationError = true;
+        finishImageDurationPreview(true);
+        if (state.imageDuration) syncImageDurationInputs(state.imageDuration);
+        imageDurationStatus(`Error: ${error.message}`);
+        showToast(`Image duration failed: ${error.message}`);
+      }
+    }
+  } finally {
+    imageDurationRunning = false;
+  }
+}
+
+async function loadDownloadedImage(file, durationOverride = null) {
+  const input = document.getElementById("input-image-duration");
+  const duration = Number(durationOverride ?? (input?.value || 10));
+  if (!Number.isFinite(duration) || duration < 1 || duration > 300) throw new Error("Choose an image duration from 1 to 300 seconds.");
+  const generation = state.sourceGeneration;
+  el.ytProgressBox.classList.remove("hidden");
+  el.ytProgressLabel.textContent = "Loading image into Studio…";
+  el.ytProgressBar.style.width = "0%";
+  el.ytProgressPercent.textContent = "0%";
+  const response = await fetch("/api/images/import", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({file_path: file.file_path, duration})
+  });
+  const started = await response.json();
+  if (response.status === 405 || response.status === 404) {
+    throw new Error("Vibe Editor is still running an older version. Close the Vibe Editor server, start it again, then refresh Studio to load images.");
+  }
+  if (!response.ok) throw new Error(started.detail || "Could not prepare image for Studio");
+  const task = await waitForImageTask(started.task_id, 11 * 60 * 1000);
+  if (!task.file_path) throw new Error("The image import did not return a Studio source. Try again.");
+  if (generation !== state.sourceGeneration) {
+    el.ytProgressLabel.textContent = "Image prepared. Choose Use in Studio to replace your current source.";
+    return;
+  }
+  pauseVideo();
+  await loadFile(task.file_path, task.title || file.filename);
+  if (state.videoPath !== task.file_path) return;
+  state.imageSourcePath = task.source_image_path || file.file_path;
+  state.imageDuration = duration;
+  syncImageDurationInputs(duration);
+  saveProjectState();
+  renderReel();
+  el.ytProgressLabel.textContent = `Image loaded in Studio · ${duration}s`;
+  showToast("Image loaded in Studio. You can add music, edit and export it.");
+}
+
+async function downloadPostImages(expectedGeneration = state.sourceGeneration) {
+  const url = el.inputYtUrl?.value.trim();
+  if (!url) { showToast("Please paste an image or post URL"); return; }
+  const results = document.getElementById("image-download-results");
+  results?.replaceChildren();
+  results?.classList.add("hidden");
+  document.getElementById("x-video-picker")?.classList.add("hidden");
+  el.btnYtDownload.disabled = true;
+  el.btnYtText.textContent = "Downloading images…";
+  el.ytProgressBox.classList.remove("hidden");
+  el.ytProgressBar.style.width = "0%";
+  el.ytProgressPercent.textContent = "0%";
+  el.ytProgressLabel.textContent = "Finding images…";
+  let stage = "download";
+  try {
+    const response = await fetch("/api/images/download", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({url})
+    });
+    const started = await response.json();
+    if (!response.ok) throw new Error(started.detail || "Could not start image download");
+    const task = await waitForImageTask(started.task_id);
+    if (!Array.isArray(task.files) || !task.files.length) throw new Error("No images were found in this post.");
+    if (url !== el.inputYtUrl.value.trim() || expectedGeneration !== state.sourceGeneration) {
+      el.ytProgressLabel.textContent = "Source changed. Paste your link and load it again.";
+      return;
+    }
+    showDownloadedImages(task.files);
+    stage = "import";
+    await loadDownloadedImage(task.files[0], 10);
+    if (state.imageSourcePath === task.files[0].file_path) localStorage.setItem("reel_yt_url_loaded", url);
+  } catch (error) {
+    el.ytProgressLabel.textContent = `Error: ${error.message}`;
+    showToast(`Image ${stage} failed: ${error.message}`);
+  } finally {
+    el.btnYtDownload.disabled = false;
+    el.btnYtText.textContent = "⚡ Download & Load";
+  }
+}
+
 function setupYouTubeDownloader() {
+  setupVideoUrlShortcuts();
+  setupImageDurationControls();
+  if (el.btnYtText) el.btnYtText.textContent = "⚡ Download & Load";
   // Source selector tabs switching
   if (el.tabSrcLocal && el.tabSrcYt) {
     el.tabSrcLocal.addEventListener("click", () => {
@@ -3148,6 +4273,11 @@ function setupYouTubeDownloader() {
     el.inputYtUrl.addEventListener("input", (e) => {
       localStorage.setItem("reel_yt_url", e.target.value.trim());
       localStorage.removeItem("reel_yt_url_loaded");
+      const picker = document.getElementById("x-video-picker");
+      if (picker) {
+        picker.replaceChildren();
+        picker.classList.add("hidden");
+      }
       saveProjectState();
     });
   }
@@ -3155,22 +4285,107 @@ function setupYouTubeDownloader() {
   // YouTube download execution
   if (el.btnYtDownload) {
     el.btnYtDownload.addEventListener("click", async () => {
-      const url = el.inputYtUrl.value.trim();
+      if (el.btnYtDownload.disabled) return;
+      let url = el.inputYtUrl.value.trim();
       if (!url) {
-        showToast("Please enter a YouTube video URL");
+        showToast("Please paste a video, image or post URL");
         return;
       }
       localStorage.setItem("reel_yt_url", url);
       saveProjectState();
 
       el.btnYtDownload.disabled = true;
-      el.btnYtText.textContent = "Connecting to YouTube...";
+      el.btnYtText.textContent = "Detecting media…";
       el.ytProgressBox.classList.remove("hidden");
       el.ytProgressBar.style.width = "10%";
       el.ytProgressPercent.textContent = "10%";
-      el.ytProgressLabel.textContent = "Fetching video details...";
+      el.ytProgressLabel.textContent = "Checking whether this link contains a video or image…";
 
       try {
+        const sourceGeneration = state.sourceGeneration;
+        const detectedResponse = await fetch("/api/media/detect", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({url})
+        });
+        const detected = await detectedResponse.json();
+        if (!detectedResponse.ok) throw new Error(
+          [404, 405].includes(detectedResponse.status)
+            ? "Restart Vibe Editor and refresh Studio to enable automatic media detection."
+            : detected.detail || "Could not detect media from this link"
+        );
+        if (url !== el.inputYtUrl.value.trim() || sourceGeneration !== state.sourceGeneration) {
+          el.btnYtDownload.disabled = false;
+          el.btnYtText.textContent = "⚡ Download & Load";
+          el.ytProgressLabel.textContent = "Source changed. Paste your link and load it again.";
+          return;
+        }
+        if (detected.media_type === "images") {
+          await downloadPostImages(sourceGeneration);
+          return;
+        }
+        if (detected.media_type !== "video") throw new Error("No supported video or image was found at this link.");
+        document.getElementById("image-download-results")?.classList.add("hidden");
+        const parsedSource = new URL(url);
+        const isXPost = ["x.com", "www.x.com", "mobile.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com"].includes(parsedSource.hostname.toLowerCase());
+        if (isXPost && !/\/video\/\d+\/?$/.test(parsedSource.pathname)) {
+          el.btnYtText.textContent = "Finding videos in this post...";
+          const videosRes = Array.isArray(detected.videos) ? null : await fetch("/api/twitter/videos", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url })
+          });
+          const videosData = videosRes ? await videosRes.json() : detected;
+          if (videosRes && !videosRes.ok) throw new Error(videosData.detail || "Could not load videos from this post");
+          if (el.inputYtUrl.value.trim() !== url) {
+            el.btnYtDownload.disabled = false;
+            el.btnYtText.textContent = "⚡ Download & Load";
+            el.ytProgressBox.classList.add("hidden");
+            return;
+          }
+          const videos = videosData.videos || [];
+          if (!videos.length) throw new Error("No videos were found in this post");
+          if (videos.length > 1) {
+            const picker = document.getElementById("x-video-picker");
+            if (!picker) throw new Error("Refresh Studio to load the video picker");
+            picker.replaceChildren();
+            const heading = document.createElement("p");
+            heading.textContent = "Choose one video to download";
+            picker.append(heading);
+            for (const video of videos) {
+              const choice = document.createElement("button");
+              choice.type = "button";
+              choice.className = "x-video-choice";
+              if (video.thumbnail) {
+                const thumbnail = document.createElement("img");
+                thumbnail.src = video.thumbnail;
+                thumbnail.alt = `Video ${video.index} thumbnail`;
+                thumbnail.loading = "lazy";
+                choice.append(thumbnail);
+              }
+              const label = document.createElement("span");
+              const duration = Number(video.duration);
+              const time = Number.isFinite(duration) && duration > 0
+                ? ` · ${Math.floor(duration / 60)}:${String(Math.floor(duration % 60)).padStart(2, "0")}` : "";
+              label.textContent = `Download video ${video.index}${time}`;
+              choice.append(label);
+              choice.title = video.title || label.textContent;
+              choice.addEventListener("click", () => {
+                el.inputYtUrl.value = video.url;
+                el.inputYtUrl.dispatchEvent(new Event("input", { bubbles: true }));
+                el.btnYtDownload.click();
+              });
+              picker.append(choice);
+            }
+            picker.classList.remove("hidden");
+            el.btnYtDownload.disabled = false;
+            el.btnYtText.textContent = "⚡ Download & Load";
+            el.ytProgressBox.classList.add("hidden");
+            return;
+          }
+          url = videos[0].url;
+          el.inputYtUrl.value = url;
+          localStorage.setItem("reel_yt_url", url);
+          saveProjectState();
+        }
         const startRes = await fetch("/api/youtube/download", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -3184,61 +4399,40 @@ function setupYouTubeDownloader() {
 
         const { task_id } = await startRes.json();
 
-        // Poll download progress
+        // Poll download progress. Async interval callbacks can overlap, so only
+        // one response is allowed to finish/import this task.
+        let pollFinished = false;
         const pollInterval = setInterval(async () => {
           try {
             const statusRes = await fetch(`/api/youtube/status/${task_id}`);
             const task = await statusRes.json();
+            if (pollFinished) return;
+            if (!statusRes.ok) throw new Error(task.detail || "Could not check download progress");
+            if (sourceGeneration !== state.sourceGeneration || url !== el.inputYtUrl.value.trim()) {
+              pollFinished = true;
+              clearInterval(pollInterval);
+              el.btnYtDownload.disabled = false;
+              el.btnYtText.textContent = "⚡ Download & Load";
+              el.ytProgressLabel.textContent = "Source changed. Paste your link and load it again.";
+              return;
+            }
 
             el.ytProgressBar.style.width = `${task.progress}%`;
             el.ytProgressPercent.textContent = `${Math.round(task.progress)}%`;
             el.ytProgressLabel.textContent = task.message || "Downloading...";
 
             if (task.status === "completed") {
+              pollFinished = true;
               clearInterval(pollInterval);
               localStorage.setItem("reel_yt_url_loaded", url);
               el.btnYtDownload.disabled = false;
-              el.btnYtText.textContent = "⚡ Download & Generate Full Subtitles";
-              el.ytProgressLabel.textContent = "Download & Full Subtitles complete!";
+              el.btnYtText.textContent = "⚡ Download & Load";
+              el.ytProgressLabel.textContent = "Video downloaded and ready in Studio.";
 
               // Load the downloaded video file into studio
               await loadFile(task.file_path, task.title);
 
-              // Auto-fill song / anime name if recognized
-              if (task.song_name) {
-                state.songName = task.song_name;
-                if (el.inputSongName) el.inputSongName.value = task.song_name;
-              }
-              if (task.anime_name) {
-                state.animeName = task.anime_name;
-                if (el.inputAnimeName) el.inputAnimeName.value = task.anime_name;
-              }
-
-              // Auto-apply AI hook moments if available
-              if (task.ai_analysis && task.ai_analysis.recommended_start !== undefined) {
-                state.aiAnalysis = task.ai_analysis;
-                renderAIResults(task.ai_analysis, "rec");
-                applyAIClip(task.ai_analysis.recommended_start, task.ai_analysis.recommended_end, "rec");
-              }
-
-              // Auto-apply recommended subtitle style preset
-              if (task.subtitle_style) {
-                applySubtitleStyle(task.subtitle_style, task.subtitle_style_reason);
-              }
-
-              // Automatically populate vocal-synchronized subtitles for the whole video
-              if (task.lyrics && task.lyrics.length > 0) {
-                state.lyrics = task.lyrics;
-                state.fullLyrics = task.lyrics;
-                if (!state.lyricsByMoment) state.lyricsByMoment = {};
-                state.lyricsByMoment["full"] = task.lyrics;
-                state.lyricsByMoment["rec"] = task.lyrics;
-                renderLyricsList(state.lyrics);
-                renderReel();
-                showToast(`✨ Generated ${task.lyrics.length} vocal-synchronized subtitles for the entire video!`);
-              } else {
-                showToast("YouTube Video Downloaded Successfully!");
-              }
+              showToast("Video downloaded. Use the Studio buttons when you want AI moments or subtitles.");
 
               saveProjectState();
 
@@ -3247,23 +4441,25 @@ function setupYouTubeDownloader() {
               }, 4000);
 
             } else if (task.status === "error") {
+              pollFinished = true;
               clearInterval(pollInterval);
               el.btnYtDownload.disabled = false;
-              el.btnYtText.textContent = "⚡ Download & Generate Full Subtitles";
+              el.btnYtText.textContent = "⚡ Download & Load";
               el.ytProgressLabel.textContent = "Error: " + task.message;
               showToast("Download failed: " + task.message);
             }
           } catch (pollErr) {
+            pollFinished = true;
             clearInterval(pollInterval);
             el.btnYtDownload.disabled = false;
-            el.btnYtText.textContent = "⚡ Download & Generate Full Subtitles";
+            el.btnYtText.textContent = "⚡ Download & Load";
             showToast("Error tracking download status");
           }
         }, 800);
 
       } catch (err) {
         el.btnYtDownload.disabled = false;
-        el.btnYtText.textContent = "⚡ Download & Load Video";
+        el.btnYtText.textContent = "⚡ Download & Load";
         el.ytProgressLabel.textContent = "Error: " + err.message;
         showToast("Error: " + err.message);
       }
@@ -3281,7 +4477,61 @@ function setupYouTubeDownloader() {
 // -------------------------------------------------------------
 // FILE SELECTION & PROBING
 // -------------------------------------------------------------
+async function uploadLocalImage(file) {
+  if (!file) return;
+  const button = document.getElementById("btn-upload-local-image");
+  const picker = document.getElementById("input-local-image");
+  const status = document.getElementById("local-image-status");
+  if (button?.disabled || el.btnYtDownload?.disabled) return;
+  const duration = Number(document.getElementById("input-local-image-duration")?.value || 10);
+  if (!Number.isFinite(duration) || duration < 1 || duration > 300) {
+    if (status) status.textContent = "Choose an image duration from 1 to 300 seconds.";
+    showToast("Choose an image duration from 1 to 300 seconds.");
+    if (picker) picker.value = "";
+    return;
+  }
+  if (file.size > 30 * 1024 * 1024) {
+    if (status) status.textContent = "Choose an image smaller than 30 MB.";
+    showToast("Choose an image smaller than 30 MB.");
+    if (picker) picker.value = "";
+    return;
+  }
+  const generation = state.sourceGeneration;
+  if (button) button.disabled = true;
+  if (el.btnYtDownload) el.btnYtDownload.disabled = true;
+  try {
+    if (status) status.textContent = "Uploading image…";
+    const body = new FormData();
+    body.append("file", file);
+    const response = await fetch("/api/images/upload", {method: "POST", body});
+    const image = await response.json();
+    if (response.status === 404 || response.status === 405) throw new Error("Restart Vibe Editor, then refresh Studio to enable local image uploads.");
+    if (!response.ok) throw new Error(image.detail || "Could not upload the image");
+    if (!image.file_path) throw new Error("The upload did not return an image file. Try again.");
+    if (generation !== state.sourceGeneration) {
+      if (status) status.textContent = "The source changed while uploading. Select the image again to load it.";
+      return;
+    }
+    if (status) status.textContent = "Preparing image for Studio…";
+    await loadDownloadedImage(image, duration);
+    if (status) status.textContent = el.ytProgressLabel.textContent;
+  } catch (error) {
+    if (status) status.textContent = `Error: ${error.message}`;
+    showToast(`Image upload failed: ${error.message}`);
+  } finally {
+    if (button) button.disabled = false;
+    if (el.btnYtDownload) el.btnYtDownload.disabled = false;
+    if (picker) picker.value = "";
+  }
+}
+
 function setupFileHandling() {
+  const imageButton = el.btnLocalImage;
+  const imagePicker = el.inputLocalImage;
+  if (imageButton && imagePicker) {
+    imageButton.addEventListener("click", () => imagePicker.click());
+    imagePicker.addEventListener("change", event => uploadLocalImage(event.target.files?.[0]));
+  }
   el.btnBrowse.addEventListener("click", async () => {
     try {
       showToast("Opening file dialog...");
@@ -3297,6 +4547,10 @@ function setupFileHandling() {
 
   async function handleFileInput(file) {
     if (!file) return;
+    if (file.type?.startsWith("image/") || /\.(?:jpe?g|png|webp|gif|avif|bmp|tiff?)$/i.test(file.name || "")) {
+      await uploadLocalImage(file);
+      return;
+    }
     const blobUrl = URL.createObjectURL(file);
     const loading = loadFile(blobUrl, file.name, file);
     const generation = state.sourceGeneration;
@@ -3345,6 +4599,202 @@ function setupFileHandling() {
       handleFileInput(e.dataTransfer.files[0]);
     }
   });
+}
+
+const audioAudition = { controller: null, url: null, selection: null, request: 0, promise: null, desired: "original" };
+
+function audioSelectionKey() {
+  return `${state.sourceGeneration}:${state.startTime}:${state.endTime}`;
+}
+
+function resetAudioAudition() {
+  audioAudition.request++;
+  if (audioAudition.controller) audioAudition.controller.abort();
+  audioAudition.controller = null;
+  audioAudition.promise = null;
+  audioAudition.desired = "original";
+  audioAudition.selection = null;
+  state.playbackAudio = "original";
+  if (el.audioMasterPlayer) {
+    el.audioMasterPlayer.pause();
+    el.audioMasterPlayer.removeAttribute("src");
+    el.audioMasterPlayer.load();
+    el.audioMasterPlayer.classList.add("hidden");
+  }
+  if (audioAudition.url) URL.revokeObjectURL(audioAudition.url);
+  audioAudition.url = null;
+  if (el.audioMasterStatus) el.audioMasterStatus.textContent = "";
+  syncPlaybackAudioButtons();
+}
+
+function syncPlaybackAudioButtons() {
+  if (el.btnPlaybackOriginal) el.btnPlaybackOriginal.classList.toggle("active", state.playbackAudio === "original");
+  if (el.btnPlaybackEnhanced) el.btnPlaybackEnhanced.classList.toggle("active", state.playbackAudio === "enhanced");
+  el.btnPlaybackOriginal?.setAttribute?.("aria-pressed", String(state.playbackAudio === "original"));
+  el.btnPlaybackEnhanced?.setAttribute?.("aria-pressed", String(state.playbackAudio === "enhanced"));
+  el.btnPlaybackEnhanced?.setAttribute?.("aria-busy", String(!!audioAudition.controller));
+}
+
+function enhancedPlaybackReady() {
+  return state.playbackAudio === "enhanced" &&
+    audioAudition.selection === audioSelectionKey() &&
+    !!audioAudition.url && !!el.audioMasterPlayer;
+}
+
+function restoreOriginalPreviewAudio() {
+  const video = el.hiddenVideo;
+  if (!video) return;
+  const clipStart = Number(state.startTime) || 0;
+  const current = Number(video.currentTime);
+  const isLoopFadeIn = state.smartLoop && state.isLooping &&
+    Number.isFinite(current) && current - clipStart >= 0 && current - clipStart < 0.22;
+  video.muted = false;
+  video.volume = typeof window !== "undefined" && window.musicStudio ? window.musicStudio.originalGain(isLoopFadeIn ? 0.2 : 1) : (isLoopFadeIn ? 0.2 : 1);
+}
+
+function syncEnhancedAudioToVideo(force = false) {
+  if (!enhancedPlaybackReady() || !el.hiddenVideo || !el.audioMasterPlayer) return;
+  const expected = Math.max(0, el.hiddenVideo.currentTime - state.startTime);
+  if (force || Math.abs(el.audioMasterPlayer.currentTime - expected) > 0.12) {
+    try { el.audioMasterPlayer.currentTime = expected; } catch (_) {}
+  }
+}
+
+async function playEnhancedAudioWithVideo() {
+  if (!enhancedPlaybackReady() || !el.hiddenVideo || !el.audioMasterPlayer) return;
+  const request = audioAudition.request;
+  syncEnhancedAudioToVideo(true);
+  try {
+    el.audioMasterPlayer.muted = false;
+    el.audioMasterPlayer.volume = typeof window !== "undefined" && window.musicStudio ? window.musicStudio.originalGain(1) : 1;
+    await el.audioMasterPlayer.play();
+  } catch (error) {
+    if (request !== audioAudition.request || state.playbackAudio !== "enhanced" || audioAudition.selection !== audioSelectionKey()) return;
+    state.playbackAudio = "original";
+    restoreOriginalPreviewAudio();
+    syncPlaybackAudioButtons();
+    if (el.audioMasterStatus) el.audioMasterStatus.textContent = "Enhanced audio could not start, so Studio restored the original audio.";
+  }
+}
+
+async function selectPlaybackAudio(mode) {
+  if (mode === "original") {
+    audioAudition.desired = "original";
+    state.playbackAudio = "original";
+    if (el.audioMasterPlayer) el.audioMasterPlayer.pause();
+    restoreOriginalPreviewAudio();
+    syncPlaybackAudioButtons();
+    if (el.audioMasterStatus) el.audioMasterStatus.textContent = audioAudition.url
+      ? "Original playing · Enhanced is cached for instant comparison."
+      : audioAudition.controller ? "Original playing · Enhanced is preparing in the background…" : "Original audio selected.";
+    return;
+  }
+
+  // The audition must always represent what will be exported.  Previously the
+  // Enhanced audio button could prepare a mastered preview while the export
+  // toggle remained off, making a creator hear one mix and export another.
+  if (state.audioMaster?.enabled !== true) {
+    state.audioMaster = { ...(state.audioMaster || {}), enabled: true };
+    if (el.checkAudioMaster) el.checkAudioMaster.checked = true;
+    saveProjectState();
+  }
+
+  const selection = audioSelectionKey();
+  const start = Number(state.startTime);
+  const end = Number(state.endTime);
+  const status = message => { if (el.audioMasterStatus) el.audioMasterStatus.textContent = message; };
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) {
+    status("Select a valid audio range to compare.");
+    return;
+  }
+  if (audioAudition.selection && audioAudition.selection !== selection) resetAudioAudition();
+  audioAudition.desired = "enhanced";
+  const activate = async () => {
+    state.playbackAudio = "enhanced";
+    syncPlaybackAudioButtons();
+    syncEnhancedAudioToVideo(true);
+    if (state.isPlaying && el.hiddenVideo && !el.hiddenVideo.paused) {
+      el.hiddenVideo.muted = true;
+      el.hiddenVideo.volume = 0;
+      await playEnhancedAudioWithVideo();
+    }
+    if (state.playbackAudio === "enhanced") status("Enhanced ready · Cached for instant A/B comparison.");
+  };
+  if (audioAudition.selection === selection && audioAudition.url) {
+    await activate();
+    return;
+  }
+  if (audioAudition.selection === selection && audioAudition.promise) return audioAudition.promise;
+  const request = ++audioAudition.request;
+  audioAudition.selection = selection;
+  const controller = new AbortController();
+  audioAudition.controller = controller;
+  const current = () => request === audioAudition.request && selection === audioSelectionKey();
+  syncPlaybackAudioButtons();
+  status("Preparing enhanced audio once for this clip… Original keeps playing.");
+  const preparation = (async () => {
+  try {
+    const sourceVideo = await ensureServerVideoPathForAnalysis();
+    if (!current()) return;
+    const response = await fetch("/api/audio/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({ source_video: sourceVideo, start_time: start, end_time: end, audio_master: { enabled: true } })
+    });
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}));
+      const detail = typeof failure.detail === "string"
+        ? failure.detail
+        : Array.isArray(failure.detail)
+          ? failure.detail.map(item => item.msg || "Invalid audio preview request.").join(" ")
+          : "";
+      throw new Error(detail || `Audio preview failed (${response.status}). Reload the source and try again.`);
+    }
+    const blob = await response.blob();
+    if (!current()) return;
+    if (!el.audioMasterPlayer) throw new Error("Audio player unavailable. Reload the page and try again.");
+    audioAudition.url = URL.createObjectURL(blob);
+    el.audioMasterPlayer.src = audioAudition.url;
+    el.audioMasterPlayer.load?.();
+    const player = el.audioMasterPlayer;
+    if (Number.isFinite(player.readyState) && player.readyState < 2) {
+      await new Promise((resolve, reject) => {
+        const cleanup = () => {
+          clearTimeout(timer);
+          player.removeEventListener("canplay", ready);
+          player.removeEventListener("error", failed);
+          controller.signal.removeEventListener("abort", cancelled);
+        };
+        const ready = () => { cleanup(); resolve(); };
+        const failed = () => { cleanup(); reject(new Error("Enhanced audio could not be loaded. Try Enhanced again.")); };
+        const cancelled = () => { cleanup(); const error = new Error("Audio preparation cancelled."); error.name = "AbortError"; reject(error); };
+        const timer = setTimeout(failed, 15000);
+        player.addEventListener("canplay", ready, {once: true});
+        player.addEventListener("error", failed, {once: true});
+        controller.signal.addEventListener("abort", cancelled, {once: true});
+        if (controller.signal.aborted) cancelled();
+      });
+    }
+    if (!current()) return;
+    if (audioAudition.desired === "enhanced") await activate();
+    else status("Original playing · Enhanced is cached for instant comparison.");
+  } catch (error) {
+    if (current() && error.name !== "AbortError") {
+      resetAudioAudition();
+      restoreOriginalPreviewAudio();
+      status(error.message || "Could not prepare enhanced audio. Try again.");
+    }
+  } finally {
+    if (request === audioAudition.request) {
+      audioAudition.controller = null;
+      audioAudition.promise = null;
+      syncPlaybackAudioButtons();
+    }
+  }
+  })();
+  audioAudition.promise = preparation;
+  return preparation;
 }
 
 async function ensureServerVideoPathForAnalysis() {
@@ -3397,23 +4847,56 @@ function initDynamicClipForVideo(dur) {
   if (!dur || dur <= 0) return;
   const analysis = getDefaultAIAnalysis(dur);
   state.aiAnalysis = analysis;
-  renderAIResults(analysis, "rec");
-  applyAIClip(analysis.recommended_start, analysis.recommended_end, "rec");
+  // Keep the whole source selected until the creator explicitly chooses an
+  // AI-recommended moment. This makes every uploaded video immediately
+  // reviewable from start to finish.
+  state.startTime = 0;
+  state.endTime = dur;
+  state.currentTime = 0;
+  state.playbackStartPos = 0;
+  renderAIResults(analysis, "full");
+  updateTimelineUI();
+  updatePlayheadUI(0);
+  renderReel();
 }
 
-async function loadFile(pathOrUrl, optionalName, localFile = null) {
+async function loadFile(pathOrUrl, optionalName, localFile = null, options = {}) {
+  resetAudioAudition();
+  if (!options.preserveEdits && !options.preserveReelName) {
+    state.reelName = "";
+    state.hideRegions = [];
+    state.hideAreaDrawing = false;
+    state.hideAreaDraft = null;
+    if (typeof syncHideAreaControls === "function") syncHideAreaControls();
+    if (typeof syncExportName === "function") syncExportName();
+    state.adjustments = {...state.adjustments, scale: 1, verticalOffset: 0, windowInset: 0};
+    if (typeof syncAdjustmentSliders === "function") syncAdjustmentSliders();
+  }
   const generation = ++state.sourceGeneration;
+  state._preserveImageEditsGeneration = options.preserveEdits ? generation : null;
+  if (!options.preserveEdits) {
+    state.imageSourcePath = "";
+    state.imageDuration = null;
+    state._imagePreviewDuration = null;
+    state._imageDurationOriginalRange = null;
+    state._imageDurationError = false;
+  }
   state._uploadPromise = null;
   state.videoFile = localFile;
   state.videoMeta = null;
+  state._compatibilityAttemptPath = null;
   state.videoPath = pathOrUrl;
+  el.imageDurationRow?.classList.toggle("hidden", !isLoadedStudioImage());
   const filename = optionalName || pathOrUrl.split(/[\\/]/).pop();
   state.videoTitle = optionalName || filename;
 
+  if (!options.preserveEdits) {
   // Reset previous song's AI moments & lyrics
   state.aiAnalysis = null;
   state.activeMoment = "rec";
   state.lyrics = [];
+  state.fullLyrics = [];
+  state.lyricsByMoment = {};
   if (el.lyricsTimelineList) el.lyricsTimelineList.innerHTML = "";
 
   // Auto-detect song and anime name hints from filename or title
@@ -3433,6 +4916,8 @@ async function loadFile(pathOrUrl, optionalName, localFile = null) {
     if (el.inputAnimeName) el.inputAnimeName.value = "";
   }
 
+  }
+
   el.activeFileName.textContent = filename;
   el.activeFilePill.classList.remove("hidden");
   el.btnExportQuick.disabled = false;
@@ -3449,6 +4934,8 @@ async function loadFile(pathOrUrl, optionalName, localFile = null) {
   vid.onerror = async () => {
     console.warn("HTML5 video playback error:", vid.error);
     if (!pathOrUrl.startsWith("blob:") && !pathOrUrl.startsWith("http")) {
+      if (state._compatibilityAttemptPath === pathOrUrl) return;
+      state._compatibilityAttemptPath = pathOrUrl;
       showToast("⚠️ Optimizing video codec for browser playback...");
       try {
         const cRes = await fetch("/api/video/ensure-compatible", {
@@ -3483,11 +4970,12 @@ async function loadFile(pathOrUrl, optionalName, localFile = null) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ file_path: pathOrUrl })
     });
+    if (options.preserveEdits && !probeRes.ok) throw new Error("Could not load the updated image preview. Retry its duration.");
     if (probeRes.ok) {
       const meta = await probeRes.json();
       if (generation !== state.sourceGeneration) return;
       state.videoMeta = meta;
-      state.clientCrop = null;
+      if (!options.preserveEdits) state.clientCrop = null;
       el.metaRes.textContent = meta.resolution;
       el.metaAspect.textContent = meta.aspect_ratio;
       el.metaFps.textContent = `${meta.fps} FPS`;
@@ -3498,36 +4986,22 @@ async function loadFile(pathOrUrl, optionalName, localFile = null) {
       showToast(`Loaded: ${filename}`);
 
       if (meta.duration && meta.duration > 0) {
-        initDynamicClipForVideo(meta.duration);
+        if (options.preserveEdits) {
+          state.startTime = 0;
+          state.endTime = meta.duration;
+          state.currentTime = 0;
+          state.playbackStartPos = 0;
+          if (el.inputStartTime) el.inputStartTime.value = 0;
+          if (el.inputEndTime) el.inputEndTime.value = meta.duration;
+          updateTimelineUI();
+          updatePlayheadUI(0);
+        } else initDynamicClipForVideo(meta.duration);
       }
 
-      // Proactively ensure video stream has closed GOP & faststart for crash-free canvas playback
-      const isAlreadyOptimized = pathOrUrl.includes("_h264.mp4");
-      if (!isAlreadyOptimized && !pathOrUrl.startsWith("blob:") && !pathOrUrl.startsWith("http")) {
-        try {
-          const cRes = await fetch("/api/video/ensure-compatible", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ file_path: pathOrUrl, force: true })
-          });
-          if (cRes.ok) {
-            const cData = await cRes.json();
-          if (generation !== state.sourceGeneration) return;
-            if (cData.file_path && cData.file_path !== pathOrUrl) {
-              state.videoPath = cData.file_path;
-              vid.onerror = null;
-              vid.src = `/api/media/stream?path=${encodeURIComponent(cData.file_path)}`;
-              vid.load();
-              renderReel();
-            }
-          }
-        } catch (err) {
-          console.warn("Proactive compat check error:", err);
-        }
-      }
     }
   } catch (e) {
     console.warn("Probe skipped or local blob:", e);
+    if (options.preserveEdits) throw e;
   }
   if (generation === state.sourceGeneration) saveProjectState();
 }
@@ -3536,6 +5010,10 @@ async function loadFile(pathOrUrl, optionalName, localFile = null) {
 // METADATA & AI HOOK ANALYSIS
 // -------------------------------------------------------------
 function applyAIClip(start, end, momentId = "rec") {
+  if (!Number.isFinite(Number(start)) || !Number.isFinite(Number(end)) || Number(end) <= Number(start)) {
+    showToast("No audio-analyzed moment is available yet.");
+    return;
+  }
   const vid = el.hiddenVideo;
   const dur = (state.videoMeta && state.videoMeta.duration) || (vid && vid.duration) || 35.0;
   state.startTime = Math.max(0, Math.min(dur, Math.round(start * 1000) / 1000));
@@ -3577,9 +5055,14 @@ function applyAIClip(start, end, momentId = "rec") {
     }
   }
 
-  // Preserve whole video subtitles across all clip moments
+  // Only whole-video subtitles have a guaranteed full-video timestamp basis.
+  // Moment analysis can return clip-relative lyric estimates, so never carry
+  // those estimates into another selected moment or the live player.
   if (state.fullLyrics && state.fullLyrics.length > 0) {
+    state.fullLyrics = state.fullLyrics.map(cue => ({ ...cue, timeline_basis: cue.timeline_basis || "absolute" }));
     state.lyrics = state.fullLyrics;
+  } else {
+    state.lyrics = [];
   }
   renderLyricsList(state.lyrics);
 
@@ -3591,72 +5074,19 @@ function applyAIClip(start, end, momentId = "rec") {
 }
 
 function getDefaultAIAnalysis(dur = 90) {
-  dur = Math.max(5.0, Number(dur) || 90);
-  
-  // Deliver the complete, untruncated best part of the song no matter how long.
-  let recStart = 0.0;
-  let recEnd = dur;
-  let clipLabel = "Full Reel Section";
-
-  if (dur <= 60.0) {
-    // For <= 60s clips, deliver the full continuous clip
-    recStart = 0.0;
-    recEnd = dur;
-    clipLabel = `Full Clip (${Math.round(dur * 10) / 10}s)`;
-  } else if (dur <= 95.0) {
-    // For standard TV-size anime openings (~90s), deliver the full chorus, climax & cadence
-    recStart = Math.min(35.0, Math.round(dur * 0.38 * 10) / 10);
-    recEnd = dur;
-    clipLabel = `Later Section (${Math.round((recEnd - recStart) * 10) / 10}s)`;
-  } else {
-    // For longer full-length tracks (>95s), deliver the entire complete chorus & build arc
-    recStart = Math.round(dur * 0.28 * 10) / 10;
-    const generousLen = Math.min(dur - recStart, Math.max(55.0, dur * 0.4));
-    recEnd = Math.round(Math.min(dur, recStart + generousLen) * 10) / 10;
-    clipLabel = `Middle Section (${Math.round((recEnd - recStart) * 10) / 10}s)`;
-  }
-
-  // Alternative 1: Full Opening & Verse 1 (complete intro build)
-  let alt1Start = 0.0;
-  let alt1End = (dur <= 60.0)
-    ? Math.round(Math.min(dur, Math.max(15.0, dur * 0.5)) * 10) / 10
-    : Math.round(Math.min(dur, Math.max(30.0, dur * 0.42)) * 10) / 10;
-
-  // Alternative 2: Dramatic Ending Section (to the very end)
-  let alt2Start = Math.round(Math.max(0.0, dur * 0.55) * 10) / 10;
-  let alt2End = dur;
-
   const songLabel = state.songName || (state.videoTitle ? state.videoTitle.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ").trim() : "Anime Song");
-  const animeLabel = state.animeName || "";
 
   return {
     song_name: songLabel,
-    anime_name: animeLabel,
-    model_used: "Default trim (not analyzed)",
-    isDefaultSuggestion: true,
+    anime_name: state.animeName || "",
+    model_used: "Awaiting audio analysis",
+    status: "unavailable",
     score: null,
-    recommended_start: recStart,
-    recommended_end: recEnd,
-    clip_type: clipLabel,
-    reason: "Suggested from video duration only. Run audio analysis to identify musical moments.",
-    alternatives: [
-      {
-        start: alt1Start,
-        end: alt1End,
-        duration: Math.round((alt1End - alt1Start) * 10) / 10,
-        clip_type: `Opening Section (${Math.round((alt1End - alt1Start) * 10) / 10}s)`,
-        score: null,
-        reason: "Opening portion of the video; not audio-analyzed."
-      },
-      {
-        start: alt2Start,
-        end: alt2End,
-        duration: Math.round((alt2End - alt2Start) * 10) / 10,
-        clip_type: `Ending Section (${Math.round((alt2End - alt2Start) * 10) / 10}s)`,
-        score: null,
-        reason: "Ending portion of the video; not audio-analyzed."
-      }
-    ]
+    recommended_start: null,
+    recommended_end: null,
+    clip_type: "No analyzed moment",
+    reason: "Analyze the loaded audio to choose a natural start, payoff, and ending.",
+    alternatives: []
   };
 }
 
@@ -3684,13 +5114,18 @@ function renderAIResults(data, activeMoment = "rec") {
   }
 
   if (el.aiScoreNum) el.aiScoreNum.textContent = data.score ?? "—";
-  const recDur = Math.round((data.recommended_end - data.recommended_start) * 10) / 10;
+  const hasRecommendation = Number.isFinite(Number(data.recommended_start)) &&
+    Number.isFinite(Number(data.recommended_end)) && Number(data.recommended_end) > Number(data.recommended_start);
+  const recDur = hasRecommendation ? Math.round((data.recommended_end - data.recommended_start) * 10) / 10 : null;
   const typeTag = data.clip_type ? ` · ${data.clip_type}` : "";
-  if (el.aiRecTimes) el.aiRecTimes.textContent = `${formatTime(data.recommended_start, 1)} → ${formatTime(data.recommended_end, 1)} (${recDur}s)${typeTag}`;
+  if (el.aiRecTimes) el.aiRecTimes.textContent = hasRecommendation
+    ? `${formatTime(data.recommended_start, 1)} → ${formatTime(data.recommended_end, 1)} (${recDur}s)${typeTag}`
+    : `No moment selected${typeTag}`;
   if (el.aiReason) el.aiReason.textContent = `"${data.reason || 'No analysis explanation available.'}"`;
 
   // Highlight recommended button if active
   if (el.btnApplyRec) {
+    el.btnApplyRec.disabled = !hasRecommendation;
     if (activeMoment === "rec") {
       el.btnApplyRec.textContent = "✓ Active Recommended";
       el.btnApplyRec.classList.add("active");
@@ -3756,7 +5191,7 @@ function selectTextElement(elemKey) {
   if (!state.textElements) state.textElements = {};
   if (!state.textElements[elemKey]) {
     const defaults = {
-      series: { x: 540, y: 320, size: 38, color: "#38bdf8" },
+      series: { x: 540, y: 360, size: 68, lineGap: 16, color: "#ffffff" },
       creatorBadge: { x: 540, y: 160, size: 30, color: "#ffffff" },
       watermark: { x: 35, y: 661, size: 28, color: "#ffffff" },
       subtitles: { x: 540, y: 1690, size: 38, color: "#ffffff" }
@@ -3802,6 +5237,13 @@ function syncTextSliders(elem) {
   if (!elem) return;
   if (el.sliderTextSize) el.sliderTextSize.value = elem.size || 38;
   if (el.valTextSize) el.valTextSize.textContent = `${elem.size || 38}px`;
+  const isSeries = state.selectedTextElem === "series";
+  if (el.hookLineGapRow) el.hookLineGapRow.classList.toggle("hidden", !isSeries);
+  if (isSeries) {
+    const gap = Number.isFinite(Number(elem.lineGap)) ? Number(elem.lineGap) : 12;
+    if (el.sliderHookLineGap) el.sliderHookLineGap.value = gap;
+    if (el.valHookLineGap) el.valHookLineGap.textContent = `${gap}px`;
+  }
   if (el.sliderTextY) el.sliderTextY.value = elem.y || 320;
   if (el.valTextY) el.valTextY.textContent = `${elem.y || 320}px`;
   if (el.sliderTextX) el.sliderTextX.value = elem.x || 540;
@@ -3809,8 +5251,7 @@ function syncTextSliders(elem) {
 
   let color = elem.color;
   if (!color) {
-    if (state.selectedTextElem === "subtitles") color = "#ffffff";
-    else color = "#38bdf8";
+    color = "#ffffff";
   }
   if (el.pickerTextColor) el.pickerTextColor.value = color;
   if (el.inputTextHex) el.inputTextHex.value = color.toUpperCase();
@@ -3827,16 +5268,13 @@ function resetTextLayout() {
   const rawH = (vid && vid.videoHeight) ? vid.videoHeight : ((state.videoMeta && state.videoMeta.height) || 1080);
   const vidAspect = (rawW > 0 && rawH > 0) ? (rawW / rawH) : (16 / 9);
 
-  const fgScale = (state.adjustments && state.adjustments.scale) || 1.0;
-  const fgWidth = Math.round(1080 * fgScale);
-  const fgHeight = Math.round(fgWidth / vidAspect);
-  const fgY = Math.round((1920 - fgHeight) / 2 - 40);
-  const fgX = Math.round((1080 - fgWidth) / 2);
+  const fgScale = getSongWindowScale(state.adjustments && state.adjustments.scale);
+  const {x: fgX, y: fgY} = getVideoFrameGeometry(rawW, rawH, 1080, 1920, fgScale, state.adjustments.verticalOffset);
   const defaultWmX = fgX + 35;
   const defaultWmY = fgY + 45;
 
   state.textElements = {
-    series: { x: 540, y: 320, size: 38, color: "#38bdf8" },
+    series: { x: 540, y: 360, size: 68, lineGap: 16, color: "#ffffff" },
     creatorBadge: { x: 540, y: 160, size: 30, color: "#ffffff" },
     watermark: { x: defaultWmX, y: defaultWmY, size: 28, color: "#ffffff" },
     subtitles: { x: 540, y: 1690, size: 38, color: "#ffffff" }
@@ -3844,6 +5282,141 @@ function resetTextLayout() {
   selectTextElement(state.selectedTextElem || "series");
   renderReel();
   saveProjectState();
+}
+
+const MAX_HIDE_AREAS = 12;
+
+function normalizeHideRegions(regions = state.hideRegions) {
+  if (!Array.isArray(regions)) return [];
+  return regions.slice(0, MAX_HIDE_AREAS).filter(region => region &&
+    [region.x, region.y, region.width, region.height].every(value => typeof value === "number" && Number.isFinite(value)) &&
+    region.x >= 0 && region.x < 1 && region.y >= 0 && region.y < 1 && region.width > 0 && region.height > 0)
+    .map(region => ({x: region.x, y: region.y, width: Math.min(region.width, 1 - region.x), height: Math.min(region.height, 1 - region.y)}));
+}
+
+function applyHideAreaClips(context, width, height) {
+  const regions = normalizeHideRegions();
+  if (state.hideAreaDrawing && state.hideAreaDraft?.width > 0 && state.hideAreaDraft?.height > 0) regions.push(state.hideAreaDraft);
+  // Intersect the outside of each rectangle. Separate clips preserve overlap
+  // as hidden too; one combined even-odd path would reveal overlapping holes.
+  for (const region of regions) {
+    context.beginPath();
+    context.rect(0, 0, width, height);
+    context.rect(region.x * width, region.y * height, region.width * width, region.height * height);
+    context.clip("evenodd");
+  }
+}
+
+function drawHideAreaGuides(context, width, height) {
+  if (!state.hideAreaDrawing) return;
+  const regions = normalizeHideRegions();
+  if (state.hideAreaDraft) regions.push(state.hideAreaDraft);
+  context.save();
+  context.globalAlpha = 1;
+  context.strokeStyle = "#fff";
+  context.shadowColor = "#000";
+  context.shadowBlur = 3;
+  context.lineWidth = 3;
+  context.setLineDash([10, 6]);
+  for (const region of regions) context.strokeRect(region.x * width, region.y * height, region.width * width, region.height * height);
+  context.restore();
+}
+
+function syncHideAreaControls() {
+  const regions = normalizeHideRegions();
+  const draw = document.getElementById("btn-draw-hide-area");
+  const clear = document.getElementById("btn-clear-hide-areas");
+  const status = document.getElementById("hide-area-status");
+  if (draw) {
+    draw.textContent = state.hideAreaDrawing ? "Cancel" : "Draw area";
+    draw.setAttribute("aria-pressed", String(!!state.hideAreaDrawing));
+    draw.disabled = !state.hideAreaDrawing && regions.length >= MAX_HIDE_AREAS;
+  }
+  if (clear) clear.disabled = !regions.length;
+  if (status) status.textContent = state.hideAreaDrawing
+    ? "Drag a rectangle on the preview. Escape cancels."
+    : regions.length ? `${regions.length} hidden area${regions.length === 1 ? "" : "s"} · Applies throughout this clip.` : "Cover unwanted parts with the current background.";
+  el.reelCanvas?.classList.toggle("hide-area-drawing", !!state.hideAreaDrawing);
+  const list = document.getElementById("hide-area-list");
+  if (!list) return;
+  list.innerHTML = "";
+  regions.forEach((region, index) => {
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "hide-area-chip";
+    remove.textContent = `Area ${index + 1} ×`;
+    remove.setAttribute("aria-label", `Remove hidden area ${index + 1}`);
+    remove.addEventListener("click", () => {
+      state.hideRegions = normalizeHideRegions().filter((item, position) => position !== index);
+      syncHideAreaControls(); renderReel(); saveProjectState();
+    });
+    list.appendChild(remove);
+  });
+}
+
+function setupHideAreas() {
+  const canvas = el.reelCanvas;
+  if (!canvas) return;
+  let start = null, pointerId = null;
+  const finishMode = () => {
+    start = null; pointerId = null;
+    state.hideAreaDrawing = false;
+    state.hideAreaDraft = null;
+    syncHideAreaControls(); renderReel();
+  };
+  const point = event => {
+    const rect = canvas.getBoundingClientRect();
+    return {x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+            y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))};
+  };
+  const update = event => {
+    const end = point(event);
+    state.hideAreaDraft = {x: Math.min(start.x, end.x), y: Math.min(start.y, end.y),
+      width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y)};
+    renderReel();
+  };
+  document.getElementById("btn-draw-hide-area")?.addEventListener("click", () => {
+    if (state.hideAreaDrawing) { finishMode(); return; }
+    if (!state.videoPath) { showToast("Load a video or image before drawing an area."); return; }
+    if (normalizeHideRegions().length >= MAX_HIDE_AREAS) return;
+    pauseVideo();
+    _textDragState = null;
+    state.isTextElementSelected = false;
+    state.hoveredTextElem = null;
+    state.hideAreaDrawing = true;
+    syncHideAreaControls(); renderReel();
+  });
+  document.getElementById("btn-clear-hide-areas")?.addEventListener("click", () => {
+    state.hideRegions = [];
+    finishMode(); saveProjectState();
+  });
+  canvas.addEventListener("pointerdown", event => {
+    if (!state.hideAreaDrawing || (event.button !== undefined && event.button !== 0)) return;
+    event.preventDefault();
+    start = point(event); pointerId = event.pointerId;
+    canvas.setPointerCapture?.(pointerId);
+    update(event);
+  });
+  canvas.addEventListener("pointermove", event => {
+    if (!state.hideAreaDrawing || !start || event.pointerId !== pointerId) return;
+    event.preventDefault(); update(event);
+  });
+  canvas.addEventListener("pointerup", event => {
+    if (!state.hideAreaDrawing || !start || event.pointerId !== pointerId) return;
+    event.preventDefault(); update(event);
+    const region = state.hideAreaDraft;
+    if (region.width * 1080 >= 8 && region.height * 1920 >= 8) {
+      state.hideRegions = [...normalizeHideRegions(), region].slice(0, MAX_HIDE_AREAS);
+      finishMode(); saveProjectState();
+    } else {
+      start = null; pointerId = null; state.hideAreaDraft = null; renderReel();
+    }
+  });
+  canvas.addEventListener("pointercancel", finishMode);
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && state.hideAreaDrawing) { event.preventDefault(); finishMode(); }
+  });
+  syncHideAreaControls();
 }
 
 function setupTextCanvasInteraction() {
@@ -3874,7 +5447,9 @@ function setupTextCanvasInteraction() {
       { id: "sw", x: box.x, y: box.y + box.height },
       { id: "w",  x: box.x, y: box.y + box.height / 2 }
     ];
-    const threshold = 28;
+    // Small usernames still need a draggable middle. Oversized handle hit
+    // areas used to cover the entire width/height of a 28px watermark.
+    const threshold = Math.min(28, Math.max(7, Math.min(box.width, box.height) / 4));
     for (const h of handles) {
       if (Math.abs(pt.x - h.x) <= threshold && Math.abs(pt.y - h.y) <= threshold) {
         return h.id;
@@ -3895,6 +5470,7 @@ function setupTextCanvasInteraction() {
   }
 
   const handlePointerDown = (e) => {
+    if (state.hideAreaDrawing) return;
     if (e.type === "mousedown" && e.button !== 0) return;
     const pt = getCanvasCoords(e);
 
@@ -3946,6 +5522,7 @@ function setupTextCanvasInteraction() {
   };
 
   const handlePointerMove = (e) => {
+    if (state.hideAreaDrawing) return;
     const pt = getCanvasCoords(e);
 
     if (_textDragState) {
@@ -4038,6 +5615,36 @@ function setupTextCanvasInteraction() {
       renderReel();
     }
   });
+}
+
+// One active request per action; failures stay visible without discarding edits.
+function setStudioAIStatus(id, message) {
+  const status = document.getElementById(id);
+  if (status) status.textContent = message;
+}
+
+function beginStudioAI(button, statusId, message, timeoutMs = 4 * 60 * 1000) {
+  if (!button || button.disabled) return null;
+  button.disabled = true;
+  setStudioAIStatus(statusId, message);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    status(message) { setStudioAIStatus(statusId, message); },
+    error(error) {
+      return controller.signal.aborted
+        ? "Gemini took too long to respond. Your existing work is safe. Please try again."
+        : String(error?.message || "Could not reach Gemini. Check your API key and connection, then try again.");
+    },
+    finish() { clearTimeout(timer); button.disabled = false; }
+  };
+}
+
+function aiResponseError(data, fallback) {
+  if (typeof data?.detail === "string") return data.detail;
+  if (Array.isArray(data?.detail)) return data.detail.map(item => item.msg || "Invalid request").join("; ");
+  return typeof data?.error === "string" ? data.error : fallback;
 }
 
 function setupMetadataAndAI() {
@@ -4170,6 +5777,19 @@ function setupMetadataAndAI() {
     });
   }
 
+  if (el.sliderHookLineGap) {
+    el.sliderHookLineGap.addEventListener("input", (e) => {
+      const gap = Math.max(0, Math.min(80, parseInt(e.target.value) || 0));
+      state.textElements = state.textElements || {};
+      state.textElements.series = state.textElements.series || { x: 540, y: 360, size: 38, color: "#ffffff" };
+      state.textElements.series.lineGap = gap;
+      state.textElements.series._custom = true;
+      if (el.valHookLineGap) el.valHookLineGap.textContent = `${gap}px`;
+      renderReel();
+      saveProjectState();
+    });
+  }
+
   if (el.sliderTextY) {
     el.sliderTextY.addEventListener("input", (e) => {
       const val = parseInt(e.target.value) || 320;
@@ -4224,29 +5844,85 @@ function setupMetadataAndAI() {
     });
   }
 
-  el.btnDayDec.addEventListener("click", () => {
-    state.dayNumber = Math.max(1, state.dayNumber - 1);
-    el.inputDay.value = state.dayNumber;
-    renderReel();
-    saveProjectState();
-  });
-  el.btnDayInc.addEventListener("click", () => {
-    state.dayNumber += 1;
-    el.inputDay.value = state.dayNumber;
-    renderReel();
-    saveProjectState();
-  });
-  el.inputDay.addEventListener("change", (e) => {
-    state.dayNumber = parseInt(e.target.value) || 1;
-    renderReel();
-    saveProjectState();
-  });
+  if (el.btnDayDec && el.btnDayInc && el.inputDay) {
+    el.btnDayDec.addEventListener("click", () => {
+      state.dayNumber = Math.max(1, state.dayNumber - 1);
+      el.inputDay.value = state.dayNumber;
+      renderReel();
+      saveProjectState();
+    });
+    el.btnDayInc.addEventListener("click", () => {
+      state.dayNumber += 1;
+      el.inputDay.value = state.dayNumber;
+      renderReel();
+      saveProjectState();
+    });
+    el.inputDay.addEventListener("change", (e) => {
+      state.dayNumber = parseInt(e.target.value) || 1;
+      renderReel();
+      saveProjectState();
+    });
+  }
 
   if (el.inputSeriesText) {
     el.inputSeriesText.addEventListener("input", (e) => {
       state.seriesFormat = e.target.value;
+      void refreshHookEmoji();
       renderReel();
       saveProjectState();
+    });
+  }
+  if (el.selectHookFont) {
+    applyHookFontOptionPreviews(el.selectHookFont);
+    applyFontControl(el.selectHookFont, state.hookFont);
+    el.selectHookFont.addEventListener("change", (e) => {
+      state.hookFont = AVAILABLE_HOOK_FONTS.includes(e.target.value) ? e.target.value : DEFAULT_HOOK_FONT;
+      const series = state.textElements?.series;
+      if (series && !series._custom && Number(series.size) < 56) {
+        series.size = 68;
+        series.lineGap = Math.max(16, Number(series.lineGap) || 0);
+      }
+      applyFontControl(el.selectHookFont, state.hookFont);
+      renderReel();
+      saveProjectState();
+    });
+  }
+  if (el.sliderHookFadeStart) {
+    el.sliderHookFadeStart.addEventListener("input", (e) => {
+      state.hookFade = { ...(state.hookFade || {}), start: Math.max(0, Number(e.target.value) || 0) };
+      syncHookFadeControls();
+      renderReel();
+      saveProjectState();
+    });
+  }
+  syncHookFadeControls();
+
+  if (el.selectSubtitleFont) {
+    applyFontControl(el.selectSubtitleFont, state.subtitleFont);
+    el.selectSubtitleFont.addEventListener("change", (e) => {
+      state.subtitleFont = FONT_STACKS[e.target.value] ? e.target.value : "segoe";
+      applyFontControl(el.selectSubtitleFont, state.subtitleFont);
+      renderReel();
+      saveProjectState();
+    });
+  }
+  if (el.hookEmojiButtons) {
+    el.hookEmojiButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const input = el.inputSeriesText;
+        const emoji = button.dataset.hookEmoji || "";
+        if (!input || !emoji) return;
+        const start = Number.isInteger(input.selectionStart) ? input.selectionStart : input.value.length;
+        const end = Number.isInteger(input.selectionEnd) ? input.selectionEnd : start;
+        input.value = input.value.slice(0, start) + emoji + input.value.slice(end);
+        const caret = start + emoji.length;
+        input.focus();
+        input.setSelectionRange(caret, caret);
+        state.seriesFormat = input.value;
+        void refreshHookEmoji();
+        renderReel();
+        saveProjectState();
+      });
     });
   }
   if (el.inputSongName) {
@@ -4286,21 +5962,51 @@ function setupMetadataAndAI() {
   // AI Viral Hook Generator Button
   if (el.btnGenerateAiHooks) {
     el.btnGenerateAiHooks.addEventListener("click", async () => {
+      const request = beginStudioAI(el.btnGenerateAiHooks, "ai-hooks-status", "Reading your selected reel…");
+      if (!request) return;
       const origText = el.btnGenerateAiHooks.textContent;
-      el.btnGenerateAiHooks.textContent = "⏳ Generating...";
+      const generation = state.sourceGeneration;
+      const startTime = Number(state.startTime);
+      const endTime = Number(state.endTime);
+      const selectionIsCurrent = () => generation === state.sourceGeneration &&
+        startTime === Number(state.startTime) && endTime === Number(state.endTime);
+      el.btnGenerateAiHooks.textContent = "⏳ Reading selected reel...";
       el.btnGenerateAiHooks.disabled = true;
+      if (el.aiHooksContainer) {
+        el.aiHooksContainer.innerHTML = "";
+        el.aiHooksContainer.classList.add("hidden");
+      }
       try {
+        if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || startTime < 0 || endTime <= startTime) {
+          throw new Error("Select a valid reel start and end time first.");
+        }
+        if (endTime - startTime > 360) {
+          throw new Error("Select a reel segment of 6 minutes or less for hook generation.");
+        }
+        const videoPath = await ensureServerVideoPathForAnalysis();
+        if (!selectionIsCurrent()) throw new Error("The selected reel changed. Generate hooks again for the current selection.");
         const res = await fetch("/api/ai/viral-hooks", {
+          signal: request.signal,
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            video_path: videoPath,
+            start_time: startTime,
+            end_time: endTime,
             song_name: state.songName || "",
             anime_name: state.animeName || "",
-            video_title: state.videoTitle || ""
+            video_title: state.videoTitle || "",
+            ...(state.aiInstruction?.trim() ? { creator_instruction: state.aiInstruction.trim() } : {})
           })
         });
+        if (!res.ok) {
+          const error = await res.json().catch(() => ({}));
+          throw new Error(aiResponseError(error, "Hook generation failed. Check your Gemini API key and try again."));
+        }
         const data = await res.json();
-        const hooks = data.hooks || [];
+        if (!selectionIsCurrent()) throw new Error("The selected reel changed. Generate hooks again for the current selection.");
+        const hooks = Array.isArray(data.hooks) ? data.hooks.filter(item => item && typeof item.hook === "string" && item.hook.trim()) : [];
+        if (!hooks.length) throw new Error("No usable hooks were returned. Try another selected reel segment or generate again.");
         if (el.aiHooksContainer) {
           el.aiHooksContainer.innerHTML = "";
           el.aiHooksContainer.classList.remove("hidden");
@@ -4308,10 +6014,16 @@ function setupMetadataAndAI() {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "btn btn-sm";
-            btn.style.cssText = "font-size:11px; padding:4px 9px; background:rgba(255,255,255,0.06); border:1px solid #38bdf844; color:#38bdf8; border-radius:14px; cursor:pointer; text-align:left; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;";
+            btn.style.cssText = "font-size:11px; line-height:1.35; padding:6px 10px; background:rgba(255,255,255,0.06); border:1px solid #38bdf844; color:#38bdf8; border-radius:10px; cursor:pointer; text-align:left; flex:1 1 100%; min-width:0; max-width:100%; white-space:normal; overflow-wrap:anywhere;";
             btn.textContent = h.hook;
-            btn.title = "Click to apply this viral hook";
+            btn.title = h.evidence ? `Based on the selected reel: ${h.evidence}` : "Click to apply this viral hook";
             btn.addEventListener("click", () => {
+              if (!selectionIsCurrent()) {
+                el.aiHooksContainer.innerHTML = "";
+                el.aiHooksContainer.classList.add("hidden");
+                showToast("The selected reel changed. Generate hooks again for the current selection.");
+                return;
+              }
               state.seriesFormat = h.hook;
               if (el.inputSeriesText) el.inputSeriesText.value = h.hook;
               renderReel();
@@ -4321,12 +6033,97 @@ function setupMetadataAndAI() {
             el.aiHooksContainer.appendChild(btn);
           });
         }
+        request.status(`${hooks.length} hook suggestions ready. Click one to use it.`);
         showToast("✨ Generated viral hooks!");
       } catch (err) {
-        showToast("Error generating hooks: " + err.message);
+        request.status(request.error(err));
+        showToast("Error generating hooks: " + request.error(err));
       } finally {
         el.btnGenerateAiHooks.textContent = origText;
-        el.btnGenerateAiHooks.disabled = false;
+        request.finish();
+      }
+    });
+  }
+
+  // AI Instagram Caption Generator — keeps a ready-to-copy caption in the project.
+  if (el.btnGenerateAiCaption) {
+    el.btnGenerateAiCaption.addEventListener("click", async () => {
+      const request = beginStudioAI(el.btnGenerateAiCaption, "ai-caption-status", "Writing a caption from your details…");
+      if (!request) return;
+      const generation = state.sourceGeneration;
+      const captionContext = () => JSON.stringify([state.startTime, state.endTime, state.songName, state.animeName, state.videoTitle, state.seriesFormat, state.aiInstruction, state.caption]);
+      const originalContext = captionContext();
+      const originalText = el.btnGenerateAiCaption.textContent;
+      el.btnGenerateAiCaption.textContent = "⏳ Writing...";
+      el.btnGenerateAiCaption.disabled = true;
+      if (el.aiCaptionStatus) el.aiCaptionStatus.textContent = "Using your anime, song, and selected moment...";
+      try {
+        const res = await fetch("/api/ai/instagram-caption", {
+          signal: request.signal,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            song_name: state.songName || "",
+            anime_name: state.animeName || "",
+            video_title: state.videoTitle || "",
+            hook: state.seriesFormat || "",
+            moment_type: (state.aiAnalysis && state.aiAnalysis.clip_type) || "",
+            ...(state.aiInstruction?.trim() ? { creator_instruction: state.aiInstruction.trim() } : {})
+          })
+        });
+        if (!res.ok) {
+          const error = await res.json().catch(() => ({}));
+          throw new Error(aiResponseError(error, "Caption generation failed. Check your Gemini API key and try again."));
+        }
+        const data = await res.json();
+        if (generation !== state.sourceGeneration || captionContext() !== originalContext) {
+          throw new Error("The reel details or caption changed while Gemini was working. Your edits were kept. Generate again when ready.");
+        }
+        const caption = String(data.caption || "").trim();
+        if (!caption) throw new Error("No usable caption was returned");
+        state.caption = caption;
+        if (el.aiCaptionOutput) el.aiCaptionOutput.value = caption;
+        if (el.schedCaption) el.schedCaption.value = caption;
+        if (el.aiCaptionBox) el.aiCaptionBox.classList.remove("hidden");
+        if (el.aiCaptionStatus) {
+          el.aiCaptionStatus.textContent = data.source === "starter"
+            ? "Starter caption used — add a Gemini key for verified anime details."
+            : "Ready to copy. It is also saved for your scheduling screen.";
+        }
+        saveProjectState();
+        showToast("✍️ Instagram caption ready to copy!");
+      } catch (err) {
+        if (el.aiCaptionStatus) el.aiCaptionStatus.textContent = "Could not generate caption: " + request.error(err);
+        if (el.aiCaptionBox) el.aiCaptionBox.classList.remove("hidden");
+        showToast("Error generating caption: " + request.error(err));
+      } finally {
+        el.btnGenerateAiCaption.textContent = originalText;
+        request.finish();
+      }
+    });
+  }
+
+  if (el.aiCaptionOutput) {
+    el.aiCaptionOutput.addEventListener("input", (e) => {
+      state.caption = e.target.value;
+      if (el.schedCaption) el.schedCaption.value = state.caption;
+      saveProjectState();
+    });
+  }
+
+  if (el.btnCopyAiCaption) {
+    el.btnCopyAiCaption.addEventListener("click", async () => {
+      const caption = (el.aiCaptionOutput && el.aiCaptionOutput.value) || state.caption || "";
+      if (!caption.trim()) return;
+      try {
+        await navigator.clipboard.writeText(caption);
+        showToast("Caption copied — paste it into Instagram.");
+      } catch (_) {
+        if (el.aiCaptionOutput) {
+          el.aiCaptionOutput.focus();
+          el.aiCaptionOutput.select();
+        }
+        showToast("Caption selected — press Ctrl+C to copy.");
       }
     });
   }
@@ -4366,6 +6163,40 @@ function setupMetadataAndAI() {
       saveProjectState();
     });
   }
+
+  const watermarkStyle = document.getElementById("select-watermark-style");
+  const watermarkFont = document.getElementById("select-watermark-font");
+  const watermarkRotation = document.getElementById("select-watermark-rotation");
+  const syncWatermarkAppearance = () => {
+    const blended = state.watermark?.style === "scene_blend";
+    if (watermarkRotation) watermarkRotation.disabled = !blended;
+    const hint = document.getElementById("watermark-blend-hint");
+    if (hint) hint.classList.toggle("hidden", !blended);
+  };
+  if (watermarkStyle) watermarkStyle.addEventListener("change", () => {
+    state.watermark.style = ["clean", "scene_blend"].includes(watermarkStyle.value) ? watermarkStyle.value : "clean";
+    syncWatermarkAppearance();
+    renderReel();
+    saveProjectState();
+  });
+  if (watermarkFont) {
+    applyFontControl(watermarkFont, state.watermark.font);
+    watermarkFont.addEventListener("change", () => {
+      state.watermark.font = FONT_STACKS[watermarkFont.value] ? watermarkFont.value : "bahnschrift";
+      applyFontControl(watermarkFont, state.watermark.font);
+      renderReel();
+      saveProjectState();
+      void refreshWatermarkFont();
+    });
+  }
+  if (watermarkFont) void refreshWatermarkFont();
+  document.fonts?.addEventListener?.("loadingdone", () => renderReel());
+  if (watermarkRotation) watermarkRotation.addEventListener("change", () => {
+    state.watermark.rotation = Number(watermarkRotation.value) === 90 ? 90 : 0;
+    renderReel();
+    saveProjectState();
+  });
+  syncWatermarkAppearance();
 
   // Laplace Creator Avatar & Follow Tag Toggle & Input (Separate)
   if (el.checkCreatorBadge) {
@@ -4421,113 +6252,66 @@ function setupMetadataAndAI() {
     saveProjectState();
   });
 
-  // AI Hook Analysis
-  el.btnAnalyzeAI.addEventListener("click", async () => {
-    // If user has a new YouTube URL in the input that hasn't been downloaded yet, download it first
-    const pendingYtUrl = el.inputYtUrl ? el.inputYtUrl.value.trim() : "";
-    const loadedUrl = localStorage.getItem("reel_yt_url_loaded");
-    if (pendingYtUrl && (loadedUrl !== pendingYtUrl || !state.videoPath)) {
-      showToast("⚡ Downloading video from YouTube first...");
-      if (el.btnYtDownload) {
-        el.btnYtDownload.click();
-      }
-      return;
-    }
-
-    if (state._uploadPromise || String(state.videoPath || "").startsWith("blob:")) {
-      try {
-        await ensureServerVideoPathForAnalysis();
-      } catch (err) {
-        showToast(err.message);
-        return;
-      }
-    }
-
-    const videoHint = state.videoTitle || (state.videoPath ? state.videoPath.split(/[\\/]/).pop() : "") || (el.activeFileName ? el.activeFileName.textContent : "");
-    if (!state.songName && !state.animeName && !videoHint) {
-      showToast("Please load a video or enter Song / Anime Name first");
-      return;
-    }
-    const dur = (state.videoMeta && state.videoMeta.duration) || el.hiddenVideo.duration || 90;
-
-    el.aiLoading.classList.remove("hidden");
-    el.aiResults.classList.add("hidden");
-    el.btnAnalyzeAI.disabled = true;
-    el.btnAnalyzeAI.innerHTML = '<span>⚡ Analyzing & Styling Subtitles...</span>';
-
+  // AI Hook Analysis — only loaded audio; never apply an obsolete response.
+  if (el.btnAnalyzeAI) el.btnAnalyzeAI.addEventListener("click", async () => {
+    const request = beginStudioAI(el.btnAnalyzeAI, "ai-analysis-status", "Listening for a complete musical moment…");
+    if (!request) return;
+    const generation = state.sourceGeneration;
+    const start = state.startTime, end = state.endTime;
+    const songName = state.songName, animeName = state.animeName;
+    const current = () => generation === state.sourceGeneration && start === state.startTime && end === state.endTime;
+    el.aiLoading?.classList.remove("hidden");
+    el.btnAnalyzeAI.textContent = "Listening…";
     try {
+      const videoPath = await ensureServerVideoPathForAnalysis();
+      if (!current()) throw new Error("The video or trim changed. Analyze the current selection again.");
+      const dur = Number(state.videoMeta?.duration || el.hiddenVideo?.duration);
+      if (!Number.isFinite(dur) || dur <= 0) throw new Error("Wait for the loaded video duration, then try again.");
       const res = await fetch("/api/ai/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          song_name: state.songName || "",
-          anime_name: state.animeName || "",
-          video_title: videoHint,
-          duration: dur,
-          video_path: state.videoPath || ""
-        })
+        signal: request.signal,
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({song_name: songName || "", anime_name: animeName || "", video_title: state.videoTitle || "", duration: dur, video_path: videoPath})
       });
-
       if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.detail || `Server returned ${res.status}`);
+        const data = await res.json().catch(() => ({}));
+        throw new Error(aiResponseError(data, `Audio analysis failed (${res.status}). Please try again.`));
       }
-
       const data = await res.json();
-
-      // Automatically populate Song Name and Anime Name if recognized by Gemini
-      if (data.song_name) {
+      if (!current() || videoPath !== state.videoPath) throw new Error("The video or trim changed. Your current selection was kept. Analyze again.");
+      const validRange = (start, end) => Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end > start && end <= dur + 0.1;
+      if (data.status !== "success" || !validRange(data.recommended_start, data.recommended_end)) {
+        throw new Error(data.reason || "Gemini did not return a valid audio-based moment. Your current trim was kept.");
+      }
+      data.alternatives = Array.isArray(data.alternatives) ? data.alternatives.filter(item => validRange(item.start, item.end)) : [];
+      if (data.song_name && state.songName === songName) {
         state.songName = data.song_name;
         if (el.inputSongName) el.inputSongName.value = data.song_name;
       }
-      if (data.anime_name) {
+      if (data.anime_name && state.animeName === animeName) {
         state.animeName = data.anime_name;
         if (el.inputAnimeName) el.inputAnimeName.value = data.anime_name;
       }
-
-      state.aiAnalysis = data;
       renderAIResults(data, "rec");
       applyAIClip(data.recommended_start, data.recommended_end, "rec");
-
-      // Auto-apply Gemini's recommended subtitle style that fits the song
-      if (data.subtitle_style) {
-        applySubtitleStyle(data.subtitle_style, data.subtitle_style_reason);
-      }
-
-      // Automatically store and display synchronized dual lyrics if generated
-      if (data.lyrics && data.lyrics.length > 0) {
-        state.lyrics = data.lyrics;
-        state.fullLyrics = data.lyrics;
-        if (!state.lyricsByMoment) state.lyricsByMoment = {};
-        state.lyricsByMoment["rec"] = data.lyrics;
-        renderLyricsList(state.lyrics);
-      }
-
-      showToast(`✨ Identified: ${data.song_name || state.songName} — Auto-generated clip & subtitles!`);
-
-    } catch (e) {
-      console.warn("AI analysis error, using dynamic heuristic fallback:", e);
-      const fallbackData = getDefaultAIAnalysis(dur);
-      state.aiAnalysis = fallbackData;
-      renderAIResults(fallbackData, "rec");
-      applyAIClip(fallbackData.recommended_start, fallbackData.recommended_end, "rec");
-      if (fallbackData.subtitle_style) {
-        applySubtitleStyle(fallbackData.subtitle_style);
-      }
-      showToast("Notice: Applied dynamic timing for this song (" + (e.message || "AI busy") + ")");
+      request.status("Audio-based moment selected. Your existing subtitles and style were kept.");
+      saveProjectState();
+      showToast("Audio-based moment ready.");
+    } catch (error) {
+      request.status(request.error(error));
+      showToast("Audio analysis: " + request.error(error));
     } finally {
-      el.aiLoading.classList.add("hidden");
-      el.aiResults.classList.remove("hidden");
-      el.btnAnalyzeAI.disabled = false;
+      el.aiLoading?.classList.add("hidden");
       el.btnAnalyzeAI.innerHTML = '<span>✨ Analyze Song</span>';
+      request.finish();
     }
   });
 
   function handleApplyRecommended() {
     const analysis = state.aiAnalysis;
-    if (analysis && analysis.recommended_start !== undefined) {
+    if (analysis && Number.isFinite(Number(analysis.recommended_start)) &&
+        Number.isFinite(Number(analysis.recommended_end)) && analysis.recommended_end > analysis.recommended_start) {
       applyAIClip(analysis.recommended_start, analysis.recommended_end, "rec");
-      showToast("✓ Applied Recommended Clip & Subtitles to Playbar!");
+      showToast("✓ Applied Recommended Clip to Playbar!");
     } else {
       showToast("No clip available yet. Load a video or click 'Analyze Song'.");
     }
@@ -4553,87 +6337,74 @@ function setupMetadataAndAI() {
   initialAnalysis.isInitialPlaceholder = true;
   renderAIResults(initialAnalysis, state.activeMoment || "rec");
 
-  // Generate vocal-synchronized subtitles for the ENTIRE video
+  // Generate vocal-synchronized subtitles for the ENTIRE video without discarding edits.
   if (el.btnSyncFullLyrics) {
     el.btnSyncFullLyrics.addEventListener("click", async () => {
-      if (state._uploadPromise || String(state.videoPath || "").startsWith("blob:")) {
-        try {
-          await ensureServerVideoPathForAnalysis();
-        } catch (err) {
-          showToast(err.message);
-          return;
-        }
-      }
-
-      const videoHint = state.videoTitle || (state.videoPath ? state.videoPath.split(/[\\/]/).pop() : "") || (el.activeFileName ? el.activeFileName.textContent : "");
-      if (!state.videoPath && !videoHint) {
-        showToast("Please load a video or enter a YouTube URL first");
-        return;
-      }
-
-      const dur = (state.videoMeta && state.videoMeta.duration) || (el.hiddenVideo && el.hiddenVideo.duration) || 90;
+      const request = beginStudioAI(el.btnSyncFullLyrics, "subtitle-generation-status", "Preparing the audio. Existing subtitles stay safe while Gemini listens…", 15 * 60 * 1000);
+      if (!request) return;
+      const generation = state.sourceGeneration;
+      const originalLyrics = JSON.stringify(state.lyrics || []);
       if (el.lyricsLoading) {
         el.lyricsLoading.classList.remove("hidden");
         const loadingText = el.lyricsLoading.querySelector("p");
-        if (loadingText) loadingText.textContent = "Listening to vocal track & generating full-video subtitles...";
+        if (loadingText) loadingText.textContent = "Listening to the full video in sections. Longer videos can take a few minutes…";
       }
-      el.btnSyncFullLyrics.disabled = true;
-      if (el.btnSyncFullText) el.btnSyncFullText.textContent = "✨ Syncing Whole Video...";
-
+      if (el.btnSyncFullText) el.btnSyncFullText.textContent = "Generating subtitles…";
       try {
+        if (state._uploadPromise || String(state.videoPath || "").startsWith("blob:")) await ensureServerVideoPathForAnalysis();
+        if (generation !== state.sourceGeneration) throw new Error("The video changed. Generate subtitles for the current video again.");
+        if (!state.videoPath || String(state.videoPath).startsWith("blob:")) {
+          throw new Error("Please wait for the video to finish loading, then try Whole Video Subtitles again.");
+        }
+        const sourcePath = state.videoPath;
+        const dur = Number(state.videoMeta?.duration || el.hiddenVideo?.duration);
+        if (!Number.isFinite(dur) || dur <= 0) throw new Error("Wait for the loaded video duration, then try again.");
+        request.status("Gemini is transcribing the audio and timing each subtitle…");
         const res = await fetch("/api/ai/full-subtitles", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            video_path: state.videoPath || "",
-            song_name: state.songName || "",
-            anime_name: state.animeName || "",
-            video_title: videoHint,
-            duration: dur
-          })
+          signal: request.signal,
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({video_path: sourcePath, song_name: state.songName || "", anime_name: state.animeName || "", video_title: state.videoTitle || "", duration: dur})
         });
-
         if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.detail || "Full video subtitle generation failed");
+          const data = await res.json().catch(() => ({}));
+          throw new Error(aiResponseError(data, `Subtitle generation failed (${res.status}). Please try again.`));
         }
-
         const data = await res.json();
-        const lyrics = data.lyrics || [];
-        if (data.song_name && (!state.songName || state.songName === "Anime Song")) {
-          state.songName = data.song_name;
-          if (el.inputSongName) el.inputSongName.value = data.song_name;
+        if (generation !== state.sourceGeneration || sourcePath !== state.videoPath) {
+          throw new Error("The video changed. Generate subtitles again for the current video.");
         }
-        if (data.anime_name && (!state.animeName || state.animeName === "Anime Series")) {
-          state.animeName = data.anime_name;
-          if (el.inputAnimeName) el.inputAnimeName.value = data.anime_name;
+        if (JSON.stringify(state.lyrics || []) !== originalLyrics) {
+          throw new Error("You edited the subtitles while Gemini was working. Your edits were kept. Generate again when ready.");
         }
-
-        if (data.subtitle_style) {
-          applySubtitleStyle(data.subtitle_style, data.subtitle_style_reason);
+        if (!Array.isArray(data.lyrics)) throw new Error("Gemini returned an unreadable subtitle result. Your existing subtitles were kept. Please try again.");
+        const lyrics = data.lyrics;
+        if (!lyrics.length) {
+          request.status("No audible speech or lyrics detected. Your existing subtitles were kept.");
+          showToast("No audible speech or lyrics detected.");
+          return;
         }
-
-        if (lyrics.length > 0) {
-          state.fullLyrics = lyrics;
-          state.lyrics = lyrics;
-          renderLyricsList(state.lyrics);
-          renderReel();
-          saveProjectState();
-          showToast(`✨ Generated ${lyrics.length} timed subtitles for the entire video in ${state.subtitleStyle} style!`);
-        } else {
-          showToast("No vocals detected across the video. Ensure the video has audible lyrics.");
+        if (lyrics.some(cue => !cue || !Number.isFinite(cue.start) || !Number.isFinite(cue.end) || cue.start < 0 || cue.end <= cue.start || cue.end > dur + 0.2 || !String(cue.text_jp || cue.text_en || cue.text || "").trim())) {
+          throw new Error("Gemini returned invalid subtitle timings. Your existing subtitles were kept. Please try again.");
         }
-      } catch (err) {
-        console.error("Full video subtitle sync error:", err);
-        showToast("Failed to generate full-video subtitles: " + err.message);
+        const absoluteLyrics = lyrics.map(cue => ({ ...cue, timeline_basis: "absolute" }));
+        state.fullLyrics = absoluteLyrics;
+        state.lyrics = absoluteLyrics;
+        state.lyricsByMoment = { ...(state.lyricsByMoment || {}), full: absoluteLyrics };
+        state.showLyrics = true;
+        if (el.checkSubtitles) el.checkSubtitles.checked = true;
+        renderLyricsList(state.lyrics);
+        renderReel();
+        saveProjectState();
+        request.status(`${lyrics.length} timed subtitles ready. Your selected style was kept.`);
+        showToast(`Generated ${lyrics.length} timed subtitles.`);
+      } catch (error) {
+        console.error("Full video subtitle sync error:", error);
+        request.status(request.error(error));
+        showToast("Could not generate subtitles: " + request.error(error));
       } finally {
-        if (el.lyricsLoading) {
-          el.lyricsLoading.classList.add("hidden");
-          const loadingText = el.lyricsLoading.querySelector("p");
-          if (loadingText) loadingText.textContent = "Synchronizing Japanese & English lyrics...";
-        }
-        el.btnSyncFullLyrics.disabled = false;
+        el.lyricsLoading?.classList.add("hidden");
         if (el.btnSyncFullText) el.btnSyncFullText.textContent = "✨ Whole Video Subtitles";
+        request.finish();
       }
     });
   }
@@ -4641,6 +6412,7 @@ function setupMetadataAndAI() {
   if (el.checkSubtitles) {
     el.checkSubtitles.addEventListener("change", (e) => {
       state.showLyrics = e.target.checked;
+      renderReel();
       saveProjectState();
       showToast(state.showLyrics ? "Dual Subtitles: Visible" : "Dual Subtitles: Hidden");
     });
@@ -4678,7 +6450,7 @@ function setupMetadataAndAI() {
 function updateRadiusUI(rad) {
   if (el.valRadius) {
     if (rad >= 280) {
-      el.valRadius.textContent = `${rad}px (Circular Pill)`;
+      el.valRadius.textContent = `${rad}px (Maximum curve)`;
     } else if (rad >= 180) {
       el.valRadius.textContent = `${rad}px (Oval)`;
     } else if (rad >= 80) {
@@ -4694,32 +6466,35 @@ function updateRadiusUI(rad) {
       chip.classList.toggle("active", Math.abs(chipRad - rad) <= 6);
     });
   }
-  if (el.borderModeBtns && state.adjustments && state.adjustments.curvedBorder !== false) {
-    const isCircular = rad >= 260;
+  if (el.borderModeBtns) {
+    const borderShape = getBorderShape();
     el.borderModeBtns.forEach(btn => {
       const mode = btn.dataset.border || "curved";
-      if (mode === "circular") {
-        btn.classList.toggle("active", isCircular);
-      } else if (mode === "curved") {
-        btn.classList.toggle("active", !isCircular);
-      } else if (mode === "straight") {
-        btn.classList.remove("active");
-      }
+      btn.classList.toggle("active", mode === borderShape);
     });
   }
 }
 
-function setupTemplatesAndSliders() {
-  el.tplQuickButtons.forEach(btn => {
-    btn.addEventListener("click", async () => {
-      el.tplQuickButtons.forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      const tplId = btn.dataset.tpl;
-      await loadTemplate(tplId);
-      saveProjectState();
-    });
-  });
+function getBorderShape() {
+  const configured = state.adjustments && state.adjustments.borderShape;
+  if (["curved", "straight"].includes(configured)) return configured;
+  return state.adjustments && state.adjustments.curvedBorder === false ? "straight" : "curved";
+}
 
+function syncBorderShapeControls() {
+  const borderShape = getBorderShape();
+  const showRadiusControls = borderShape === "curved";
+  if (el.borderModeBtns) {
+    el.borderModeBtns.forEach(btn => {
+      btn.classList.toggle("active", (btn.dataset.border || "curved") === borderShape);
+    });
+  }
+  if (el.rowCornerRadius) el.rowCornerRadius.style.display = showRadiusControls ? "flex" : "none";
+  const radiusPresets = document.getElementById("radius-presets-row");
+  if (radiusPresets) radiusPresets.style.display = showRadiusControls ? "flex" : "none";
+}
+
+function setupTemplatesAndSliders() {
   el.sliderBlur.addEventListener("input", (e) => {
     state.adjustments.blur = parseFloat(e.target.value);
     el.valBlur.textContent = `${state.adjustments.blur}px`;
@@ -4733,14 +6508,34 @@ function setupTemplatesAndSliders() {
     saveProjectState();
   });
   el.sliderScale.addEventListener("input", (e) => {
-    state.adjustments.scale = parseFloat(e.target.value);
+    state.adjustments.scale = getSongWindowScale(e.target.value);
+    e.target.value = state.adjustments.scale;
     el.valScale.textContent = `${Math.round(state.adjustments.scale * 100)}%`;
     renderReel();
     saveProjectState();
   });
+  if (el.sliderWindowInset) {
+    el.sliderWindowInset.addEventListener("input", (e) => {
+      state.adjustments.windowInset = getSongWindowInset(e.target.value);
+      e.target.value = state.adjustments.windowInset;
+      if (el.valWindowInset) el.valWindowInset.textContent = `${state.adjustments.windowInset}px`;
+      renderReel();
+      saveProjectState();
+    });
+  }
+  if (el.sliderSongWindowY) {
+    el.sliderSongWindowY.addEventListener("input", (e) => {
+      const verticalOffset = parseInt(e.target.value, 10);
+      state.adjustments.verticalOffset = Number.isFinite(verticalOffset) ? verticalOffset : 0;
+      if (el.valSongWindowY) el.valSongWindowY.textContent = `${state.adjustments.verticalOffset}px`;
+      renderReel();
+      saveProjectState();
+    });
+  }
   el.sliderRadius.addEventListener("input", (e) => {
     state.adjustments.radius = parseInt(e.target.value);
     state.adjustments.curvedBorder = true;
+    state.adjustments.borderShape = "curved";
     updateRadiusUI(state.adjustments.radius);
     renderReel();
     saveProjectState();
@@ -4763,12 +6558,33 @@ function setupTemplatesAndSliders() {
     });
   }
 
+  if (el.checkAudioMaster) {
+    el.checkAudioMaster.addEventListener("change", async (e) => {
+      state.audioMaster = { ...(state.audioMaster || {}), enabled: e.target.checked };
+      if (!state.audioMaster.enabled) {
+        // Keep the prepared clip cached even when export enhancement is off.
+        await selectPlaybackAudio("original");
+      } else if (el.audioMasterStatus) {
+        el.audioMasterStatus.textContent = "Balanced enhancement will be used in export. Compare Original and Enhanced below.";
+      }
+      saveProjectState();
+      showToast(state.audioMaster.enabled ? "Audio enhancement enabled for export" : "Export and playback use original audio");
+      if (state.audioMaster.enabled) {
+        // Prepare the exact selected trim immediately so the enabled control
+        // has an audible preview before the user starts an export.
+        await selectPlaybackAudio("enhanced");
+      }
+    });
+  }
+  if (el.btnPlaybackOriginal) el.btnPlaybackOriginal.addEventListener("click", () => selectPlaybackAudio("original"));
+  if (el.btnPlaybackEnhanced) el.btnPlaybackEnhanced.addEventListener("click", () => selectPlaybackAudio("enhanced"));
+
   if (el.bgModeBtns) {
     el.bgModeBtns.forEach(btn => {
       btn.addEventListener("click", () => {
         el.bgModeBtns.forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
-        const chosenBg = btn.dataset.bg || "blur";
+        const chosenBg = btn.dataset.bg || "black";
         state.adjustments.bgType = chosenBg;
         adaptTextColorsForBackground(chosenBg);
         if (el.rowBgBlur) el.rowBgBlur.style.display = (chosenBg === "blur") ? "flex" : "none";
@@ -4787,31 +6603,25 @@ function setupTemplatesAndSliders() {
         el.borderModeBtns.forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         const mode = btn.dataset.border || "curved";
-        const radiusPresets = document.getElementById("radius-presets-row");
         if (mode === "straight") {
           state.adjustments.curvedBorder = false;
-          if (el.rowCornerRadius) el.rowCornerRadius.style.display = "none";
-          if (radiusPresets) radiusPresets.style.display = "none";
+          state.adjustments.borderShape = "straight";
           showToast("Border: Straight (Sharp Corners)");
         } else if (mode === "circular") {
           state.adjustments.curvedBorder = true;
-          state.adjustments.radius = 304;
-          if (el.sliderRadius) el.sliderRadius.value = 304;
-          updateRadiusUI(304);
-          if (el.rowCornerRadius) el.rowCornerRadius.style.display = "flex";
-          if (radiusPresets) radiusPresets.style.display = "flex";
-          showToast("Border: Circular / Pill Shape (304px)");
+          state.adjustments.borderShape = "circular";
+          showToast("Border: Circular (Aspect-Ratio Oval)");
         } else {
           state.adjustments.curvedBorder = true;
+          state.adjustments.borderShape = "curved";
           if (!state.adjustments.radius || state.adjustments.radius < 16 || state.adjustments.radius >= 260) {
             state.adjustments.radius = 48;
           }
           if (el.sliderRadius) el.sliderRadius.value = state.adjustments.radius;
           updateRadiusUI(state.adjustments.radius);
-          if (el.rowCornerRadius) el.rowCornerRadius.style.display = "flex";
-          if (radiusPresets) radiusPresets.style.display = "flex";
           showToast("Border: Curved (Rounded Corners)");
         }
+        syncBorderShapeControls();
         renderReel();
         saveProjectState();
       });
@@ -4825,15 +6635,14 @@ function setupTemplatesAndSliders() {
         const rad = parseInt(chip.dataset.radius);
         if (!isNaN(rad)) {
           state.adjustments.curvedBorder = true;
+          state.adjustments.borderShape = "curved";
           state.adjustments.radius = rad;
           if (el.sliderRadius) el.sliderRadius.value = rad;
           updateRadiusUI(rad);
-          if (el.rowCornerRadius) el.rowCornerRadius.style.display = "flex";
-          const radiusPresets = document.getElementById("radius-presets-row");
-          if (radiusPresets) radiusPresets.style.display = "flex";
+          syncBorderShapeControls();
           renderReel();
           saveProjectState();
-          showToast(`Corner Radius: ${rad}px${rad >= 280 ? ' (Circular Pill)' : ''}`);
+          showToast(`Corner Radius: ${rad}px`);
         }
       });
     });
@@ -4897,7 +6706,7 @@ function setupTemplatesAndSliders() {
 }
 
 function syncAdjustmentSliders() {
-  const bgType = (state.adjustments && state.adjustments.bgType) || "blur";
+  const bgType = (state.adjustments && state.adjustments.bgType) || "black";
   if (el.bgModeBtns) {
     el.bgModeBtns.forEach(btn => {
       btn.classList.toggle("active", btn.dataset.bg === bgType);
@@ -4906,28 +6715,7 @@ function syncAdjustmentSliders() {
   if (el.rowBgBlur) el.rowBgBlur.style.display = (bgType === "blur") ? "flex" : "none";
   if (el.rowBgDim) el.rowBgDim.style.display = (bgType === "blur") ? "flex" : "none";
 
-  const isCurved = (state.adjustments && state.adjustments.curvedBorder !== false);
-  const curRadius = (state.adjustments && state.adjustments.radius !== undefined) ? state.adjustments.radius : 16;
-  const isCircular = isCurved && curRadius >= 260;
-  if (el.borderModeBtns) {
-    el.borderModeBtns.forEach(btn => {
-      const mode = btn.dataset.border || "curved";
-      if (!isCurved) {
-        btn.classList.toggle("active", mode === "straight");
-      } else if (isCircular) {
-        btn.classList.toggle("active", mode === "circular");
-      } else {
-        btn.classList.toggle("active", mode === "curved");
-      }
-    });
-  }
-  if (el.rowCornerRadius) {
-    el.rowCornerRadius.style.display = isCurved ? "flex" : "none";
-  }
-  const radiusPresets = document.getElementById("radius-presets-row");
-  if (radiusPresets) {
-    radiusPresets.style.display = isCurved ? "flex" : "none";
-  }
+  syncBorderShapeControls();
 
   // Sync Fade Transition Controls
   if (state.fadeTransition) {
@@ -4965,8 +6753,14 @@ function syncAdjustmentSliders() {
     if (el.valDim) el.valDim.textContent = `${Math.round(state.adjustments.brightness * 100)}%`;
   }
   if (el.sliderScale && state.adjustments) {
+    state.adjustments.scale = getSongWindowScale(state.adjustments.scale);
     el.sliderScale.value = state.adjustments.scale;
     if (el.valScale) el.valScale.textContent = `${Math.round(state.adjustments.scale * 100)}%`;
+  }
+  if (el.sliderSongWindowY && state.adjustments) {
+    const verticalOffset = Number.isFinite(Number(state.adjustments.verticalOffset)) ? Number(state.adjustments.verticalOffset) : 0;
+    el.sliderSongWindowY.value = verticalOffset;
+    if (el.valSongWindowY) el.valSongWindowY.textContent = `${verticalOffset}px`;
   }
   if (el.sliderRadius && state.adjustments) {
     el.sliderRadius.value = state.adjustments.radius;
@@ -4980,16 +6774,38 @@ function syncAdjustmentSliders() {
 // -------------------------------------------------------------
 // VIDEO FILTERS & ADJUSTMENTS DOCKS
 // -------------------------------------------------------------
+function syncFilterStrengthUI() {
+  const value = Math.max(0, Math.min(400, Number(state.filterIntensity ?? 100) || 0));
+  if (el.sliderFilterIntensity) el.sliderFilterIntensity.value = value;
+  if (el.valFilterIntensity) el.valFilterIntensity.textContent = `${value}%`;
+  document.querySelectorAll("[data-filter-strength]").forEach(button => {
+    button.setAttribute("aria-pressed", String(Number(button.dataset.filterStrength) === value));
+  });
+}
+
+function setFilterStrength(value) {
+  state.filterIntensity = Math.max(0, Math.min(400, Number(value) || 0));
+  syncFilterStrengthUI();
+  saveProjectState();
+  renderReel();
+}
+
 function setupVideoFilters() {
   const grid = el.filtersGrid;
   if (!grid) return;
 
+  if (!VIDEO_FILTERS[state.colorFilter]) state.colorFilter = "original";
   grid.innerHTML = "";
   Object.values(VIDEO_FILTERS).forEach(filter => {
     const card = document.createElement("div");
     card.className = `filter-card ${filter.id === (state.colorFilter || "original") ? "active" : ""}`;
     card.dataset.filter = filter.id;
-    card.title = `${filter.name} Filter`;
+    const unavailable = filter.id === "intel_custom" && !window.VibeColorProfiles?.isAvailable(filter.id);
+    card.title = unavailable ? "Custom RGB unavailable. Refresh Vibe Editor to retry." : (filter.description || `${filter.name} Filter`);
+    card.classList.toggle("unavailable", unavailable);
+    card.setAttribute("role", "button");
+    card.setAttribute("tabindex", unavailable ? "-1" : "0");
+    card.setAttribute("aria-disabled", String(unavailable));
     card.innerHTML = `
       <div class="filter-thumb" style="background: ${filter.thumbGrad};">
         <span class="filter-thumb-badge">${filter.name.substring(0, 3).toUpperCase()}</span>
@@ -4998,6 +6814,10 @@ function setupVideoFilters() {
     `;
 
     card.addEventListener("click", () => {
+      if (unavailable) {
+        showToast("Custom RGB could not load. Refresh Vibe Editor to retry.");
+        return;
+      }
       state.colorFilter = filter.id;
       document.querySelectorAll(".filter-card").forEach(c => c.classList.remove("active"));
       card.classList.add("active");
@@ -5006,7 +6826,15 @@ function setupVideoFilters() {
       }
       saveProjectState();
       renderReel();
-      showToast(`Filter applied: ${filter.name}`);
+      showToast(filter.id === "intel_custom"
+        ? "Custom RGB applied. Use Intel original colors to judge the preview without doubling the color effect."
+        : `Filter applied: ${filter.name}`);
+    });
+    card.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        card.click();
+      }
     });
 
     grid.appendChild(card);
@@ -5015,23 +6843,26 @@ function setupVideoFilters() {
   // Filter Intensity Slider
   if (el.sliderFilterIntensity) {
     el.sliderFilterIntensity.addEventListener("input", (e) => {
-      const val = parseInt(e.target.value, 10);
-      state.filterIntensity = val;
-      if (el.valFilterIntensity) {
-        el.valFilterIntensity.textContent = `${val}%`;
-      }
-      saveProjectState();
-      renderReel();
+      setFilterStrength(e.target.value);
     });
   }
+
+  document.querySelectorAll("[data-filter-strength]").forEach(button => {
+    button.addEventListener("click", () => setFilterStrength(button.dataset.filterStrength));
+  });
+  syncFilterStrengthUI();
 
   // Left Dock Toggle Button
   if (el.btnToggleFiltersDock && el.dockFilters) {
     el.btnToggleFiltersDock.addEventListener("click", () => {
       el.dockFilters.classList.toggle("collapsed");
       const isCollapsed = el.dockFilters.classList.contains("collapsed");
+      if (el.studioEditWorkspace) {
+        el.studioEditWorkspace.classList.toggle("filter-dock-collapsed", isCollapsed);
+      }
       el.btnToggleFiltersDock.textContent = isCollapsed ? "▶" : "◀";
       el.btnToggleFiltersDock.title = isCollapsed ? "Expand Filters Dock" : "Collapse Filters Dock";
+      el.btnToggleFiltersDock.setAttribute("aria-label", isCollapsed ? "Expand Filters" : "Collapse Filters");
     });
   }
 }
@@ -5168,13 +6999,7 @@ function syncAdjustmentDockSliders() {
   }
 
   // Also sync filter intensity
-  if (el.sliderFilterIntensity) {
-    const val = state.filterIntensity !== undefined ? state.filterIntensity : 100;
-    el.sliderFilterIntensity.value = val;
-    if (el.valFilterIntensity) {
-      el.valFilterIntensity.textContent = `${val}%`;
-    }
-  }
+  syncFilterStrengthUI();
 
   // Sync active filter card
   const activeId = state.colorFilter || "original";
@@ -5205,38 +7030,26 @@ async function loadTemplate(templateId) {
         el.valDim.textContent = `${Math.round(state.adjustments.brightness * 100)}%`;
       }
       if (data.video) {
-        state.adjustments.scale = data.video.scale || 1.0;
+        state.adjustments.scale = getSongWindowScale(data.video.scale);
+        state.adjustments.windowInset = getSongWindowInset(data.video.window_inset);
+        state.adjustments.verticalOffset = Number.isFinite(Number(data.video.vertical_offset)) ? Number(data.video.vertical_offset) : 0;
         state.adjustments.radius = data.video.corner_radius !== undefined ? data.video.corner_radius : 16;
         if (data.video.curved_border !== undefined) {
           state.adjustments.curvedBorder = !!data.video.curved_border;
         }
+        state.adjustments.borderShape = ["curved", "circular", "straight"].includes(data.video.border_shape)
+          ? data.video.border_shape
+          : (state.adjustments.curvedBorder === false ? "straight" : "curved");
         el.sliderScale.value = state.adjustments.scale;
+        if (el.sliderWindowInset) el.sliderWindowInset.value = state.adjustments.windowInset;
+        if (el.sliderSongWindowY) el.sliderSongWindowY.value = state.adjustments.verticalOffset;
         el.sliderRadius.value = state.adjustments.radius;
         el.valScale.textContent = `${Math.round(state.adjustments.scale * 100)}%`;
+        if (el.valWindowInset) el.valWindowInset.textContent = `${state.adjustments.windowInset}px`;
+        if (el.valSongWindowY) el.valSongWindowY.textContent = `${state.adjustments.verticalOffset}px`;
         updateRadiusUI(state.adjustments.radius);
 
-        const isCurved = state.adjustments.curvedBorder !== false;
-        const curRadius = state.adjustments.radius !== undefined ? state.adjustments.radius : 16;
-        const isCircular = isCurved && curRadius >= 260;
-        if (el.borderModeBtns) {
-          el.borderModeBtns.forEach(btn => {
-            const mode = btn.dataset.border || "curved";
-            if (!isCurved) {
-              btn.classList.toggle("active", mode === "straight");
-            } else if (isCircular) {
-              btn.classList.toggle("active", mode === "circular");
-            } else {
-              btn.classList.toggle("active", mode === "curved");
-            }
-          });
-        }
-        if (el.rowCornerRadius) {
-          el.rowCornerRadius.style.display = isCurved ? "flex" : "none";
-        }
-        const radiusPresets = document.getElementById("radius-presets-row");
-        if (radiusPresets) {
-          radiusPresets.style.display = isCurved ? "flex" : "none";
-        }
+        syncBorderShapeControls();
       }
       showToast(`Applied "${data.name}" Style`);
       renderReel();
@@ -5251,8 +7064,26 @@ async function loadTemplate(templateId) {
 // -------------------------------------------------------------
 function setupExport() {
   const triggerExport = async () => {
+    if (state.colorFilter === "intel_custom" && !window.VibeColorProfiles?.isAvailable("intel_custom")) {
+      showToast("Custom RGB could not load. Refresh Vibe Editor or choose another filter before exporting.");
+      return;
+    }
+    if (imageDurationTimer !== null || imageDurationRequest || imageDurationRunning || state._imageDurationError) {
+      showToast(state._imageDurationError
+        ? "Fix the image duration or retry it before exporting."
+        : "Image duration is updating. Wait for the Studio preview to finish, then export.");
+      return;
+    }
     if (!state.videoPath) {
       showToast("Please select a video file first!");
+      return;
+    }
+
+    const reelNameInput = document.getElementById("input-reel-name");
+    if (!commitExportName(reelNameInput ? reelNameInput.value : state.reelName) || !state.reelName) {
+      if (!state.reelName) showToast("Please enter a reel name before exporting.");
+      reelNameInput?.focus();
+      reelNameInput?.select();
       return;
     }
 
@@ -5273,8 +7104,42 @@ function setupExport() {
       }
     }
 
+    let studioTextOverlay;
+    let studioHookOverlay;
+    let studioHookSceneMask;
+    let studioUsernameSceneMask;
+    const hookFadeStart = Math.max(0, Number(state.hookFade?.start) || 0);
+    const sceneBlendHook = state.hookStyle === "scene_blend" && state.showSeriesText !== false;
+    const splitHookFadeOverlay = !sceneBlendHook && hookFadeStart > 0 && state.showSeriesText !== false;
+    try {
+      await ensureWatermarkFontLoaded();
+      if (document.fonts) await document.fonts.ready;
+      if (state.showSeriesText !== false) await ensureHookEmojiLoaded();
+      // A separate hook layer lets FFmpeg fade only the hook while the username remains stable.
+      studioTextOverlay = createStudioTextOverlay({ includeHook: !splitHookFadeOverlay && !sceneBlendHook });
+      studioHookOverlay = splitHookFadeOverlay
+        ? createStudioTextOverlay({ includeHook: true, includeWatermark: false })
+        : sceneBlendHook && hasFixedHookEmoji(state.seriesFormat)
+          ? createStudioTextOverlay({ includeHook: true, includeWatermark: false, hookEmojiOnly: true })
+          : null;
+      studioHookSceneMask = sceneBlendHook
+        ? createStudioTextOverlay({ includeHook: true, includeWatermark: false, hookSceneBlendMask: true })
+        : null;
+      studioUsernameSceneMask = state.watermark?.enabled && state.watermark.style === "scene_blend"
+        ? createStudioTextOverlay({usernameSceneMask: true})
+        : null;
+    } catch (err) {
+      el.exportStatusLabel.textContent = "Export failed: " + err.message;
+      showToast(err.message);
+      return;
+    }
+
+    let musicPayload = null;
+    try { musicPayload = window.musicStudio ? window.musicStudio.exportPayload() : null; }
+    catch (error) { el.exportStatusLabel.textContent = "Export failed: " + error.message; showToast(error.message); return; }
     const payload = {
       source_video: state.videoPath,
+      output_name: state.reelName ? `${state.reelName}.mp4` : undefined,
       start_time: state.startTime,
       end_time: state.endTime,
       aspect_ratio: state.aspectRatio || "9:16",
@@ -5285,25 +7150,38 @@ function setupExport() {
       caption: state.caption || "",
       template: {
         ...(state.templateData || { name: state.activeTemplate }),
+        hide_regions: state.hideRegions || [],
+        // `typeof` also keeps the small payload-only regression harness safe:
+        // production always creates this immediately before the payload.
+        studio_text_overlay: typeof studioTextOverlay === "string" ? studioTextOverlay : null,
+        studio_hook_overlay: typeof studioHookOverlay === "string" ? studioHookOverlay : null,
+        studio_hook_scene_mask: typeof studioHookSceneMask === "string" ? studioHookSceneMask : null,
+        studio_username_scene_mask: typeof studioUsernameSceneMask === "string" ? studioUsernameSceneMask : null,
         background: {
           ...((state.templateData && state.templateData.background) || {}),
-          type: (state.adjustments && state.adjustments.bgType) || "blur",
+          type: (state.adjustments && state.adjustments.bgType) || "black",
           blur: state.adjustments.blur,
           brightness: state.adjustments.brightness
         },
         video: {
           ...((state.templateData && state.templateData.video) || {}),
-          scale: state.adjustments.scale,
+          scale: Math.min(1.40, Math.max(0.10, Number(state.adjustments.scale) || 1.0)),
+          window_inset: Math.min(180, Math.max(0, Number(state.adjustments.windowInset) || 0)),
+          vertical_offset: Number.isFinite(Number(state.adjustments.verticalOffset)) ? Number(state.adjustments.verticalOffset) : 0,
           curved_border: state.adjustments.curvedBorder !== false,
+          border_shape: getBorderShape(),
           corner_radius: (state.adjustments.curvedBorder !== false ? state.adjustments.radius : 0)
         },
         series_text: {
           ...((state.templateData && state.templateData.series_text) || {}),
           enabled: state.showSeriesText !== false,
           background_pill: false,
+          font: "Segoe UI Semibold",
+          _custom: !!(state.textElements && state.textElements.series && state.textElements.series._custom),
           x: state.textElements && state.textElements.series ? Math.round(state.textElements.series.x) : 540,
-          y: state.textElements && state.textElements.series ? Math.round(state.textElements.series.y) : 320,
+          y: state.textElements && state.textElements.series ? Math.round(state.textElements.series.y) : 360,
           size: state.textElements && state.textElements.series ? Math.round(state.textElements.series.size) : 38,
+          line_gap: state.textElements && state.textElements.series ? Math.round(state.textElements.series.lineGap || 0) : 12,
           color: state.textElements && state.textElements.series ? state.textElements.series.color : null
         },
         song_title: {
@@ -5317,11 +7195,14 @@ function setupExport() {
         },
         watermark: {
           enabled: !!(state.watermark && state.watermark.enabled),
+          style: state.watermark?.style || "clean",
+          rotation: state.watermark?.rotation ?? 90,
           text: (state.watermark && state.watermark.text) || "",
           x: state.textElements && state.textElements.watermark ? Math.round(state.textElements.watermark.x) : 140,
           y: state.textElements && state.textElements.watermark ? Math.round(state.textElements.watermark.y) : 90,
           size: state.textElements && state.textElements.watermark ? Math.round(state.textElements.watermark.size) : 28,
-          color: state.textElements && state.textElements.watermark ? state.textElements.watermark.color : null
+          color: state.textElements && state.textElements.watermark ? state.textElements.watermark.color : null,
+          font: state.watermark?.font || "bahnschrift"
         },
         creator_badge: {
           enabled: !!(state.creatorBadge && state.creatorBadge.enabled),
@@ -5337,11 +7218,14 @@ function setupExport() {
       },
       watermark: {
         enabled: !!(state.watermark && state.watermark.enabled),
+        style: state.watermark?.style || "clean",
+        rotation: state.watermark?.rotation ?? 90,
         text: (state.watermark && state.watermark.text) || "",
         x: state.textElements && state.textElements.watermark ? Math.round(state.textElements.watermark.x) : 140,
         y: state.textElements && state.textElements.watermark ? Math.round(state.textElements.watermark.y) : 90,
         size: state.textElements && state.textElements.watermark ? Math.round(state.textElements.watermark.size) : 28,
-        color: state.textElements && state.textElements.watermark ? state.textElements.watermark.color : null
+        color: state.textElements && state.textElements.watermark ? state.textElements.watermark.color : null,
+        font: state.watermark?.font || "bahnschrift"
       },
       creator_badge: {
         enabled: !!(state.creatorBadge && state.creatorBadge.enabled),
@@ -5354,14 +7238,29 @@ function setupExport() {
       lyrics: state.lyrics || [],
       show_lyrics: state.showLyrics !== false,
       subtitle_style: state.subtitleStyle || "minimal",
+      subtitle_animation: state.subtitleAnimation || "auto",
       subtitle_language: state.subtitleLanguage || "both",
       subtitle_color: state.textElements && state.textElements.subtitles ? state.textElements.subtitles.color : null,
+      subtitle_color_en: ((style, primary) => {
+        if (style === "jp_en") return "#7dd3fc";
+        if (style === "anime") return "#a5f3fc";
+        if (style === "lofi_pastel") return "#e0b0ff";
+        return primary || "#ffffff";
+      })(
+        state.subtitleStyle || "minimal",
+        state.textElements && state.textElements.subtitles ? state.textElements.subtitles.color : null
+      ),
       subtitle_y: state.textElements && state.textElements.subtitles ? Math.round(state.textElements.subtitles.y) : null,
       subtitle_x: state.textElements && state.textElements.subtitles ? Math.round(state.textElements.subtitles.x) : null,
       subtitle_font_size: state.textElements && state.textElements.subtitles ? Math.round(state.textElements.subtitles.size) : null,
+      subtitle_font: state.subtitleFont || "segoe",
       smart_loop: state.smartLoop !== false,
       loop_mode: state.loopMode || "standard",
       loop_fade_duration: state.loopFadeDuration || 0.35,
+      audio_master: { enabled: state.audioMaster?.enabled === true },
+      video_audio_volume: typeof window !== "undefined" && window.musicStudio ? window.musicStudio.videoGain() : 1,
+      music: musicPayload,
+      hook_fade_start: Math.max(0, Number(state.hookFade?.start) || 0),
       fade_in: !!(state.fadeTransition && (state.fadeTransition.mode === "in" || state.fadeTransition.mode === "both")),
       fade_out: !!(state.fadeTransition && (state.fadeTransition.mode === "out" || state.fadeTransition.mode === "both")),
       fade_duration: (state.fadeTransition && state.fadeTransition.duration) || 0.50,
@@ -5402,7 +7301,7 @@ function setupExport() {
               el.btnDownloadExport.href = `/api/media/download?path=${encodeURIComponent(task.output_file)}`;
             }
             showToast("Reel Exported Successfully!");
-            loadHistory();
+            if (document.getElementById("view-history")?.classList.contains("active")) void loadExportHistory();
           } else if (task.status === "error") {
             clearInterval(pollInterval);
             el.exportStatusLabel.textContent = "Export Error: " + task.message;
@@ -5455,19 +7354,232 @@ function setupExport() {
 // -------------------------------------------------------------
 // SETTINGS & HISTORY
 // -------------------------------------------------------------
+function syncExportName() {
+  const input = document.getElementById("input-reel-name");
+  if (input) {
+    input.value = state.reelName || "";
+    input.title = state.reelName ? `Export as ${state.reelName}.mp4` : "Name your exported reel";
+  }
+}
+
+function commitExportName(value) {
+    const name = String(value || "").trim().replace(/\.mp4$/i, "").trim();
+    if (name && (name.length > 120 || /[<>:"/\\|?*\u0000-\u001f]/.test(name) || /\.$/.test(name) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name))) {
+      showToast('Use up to 120 characters and avoid file symbols such as /, \\, : or ?.');
+      syncExportName();
+      return false;
+    }
+    state.reelName = name;
+    syncExportName(); saveProjectState();
+    return true;
+}
+
+function setupExportName() {
+  syncExportName();
+  const input = document.getElementById("input-reel-name");
+  input?.addEventListener("change", () => commitExportName(input.value));
+  input?.addEventListener("keydown", event => {
+    if (event.key === "Enter") { event.preventDefault(); input.blur(); }
+    else if (event.key === "Escape") { event.preventDefault(); syncExportName(); input.blur(); }
+  });
+  document.getElementById("btn-refresh-history")?.addEventListener("click", loadExportHistory);
+  document.getElementById("export-history-search")?.addEventListener("input", renderExportHistory);
+  document.getElementById("export-history-filter")?.addEventListener("change", renderExportHistory);
+  document.getElementById("history-preview-close")?.addEventListener("click", closeHistoryPreview);
+  document.getElementById("history-preview-video")?.addEventListener("error", () => {
+    const status = document.getElementById("history-preview-status");
+    if (status) status.textContent = "This video could not be played. Try downloading it or refresh History if the file was moved.";
+  });
+}
+
+let exportHistoryEntries = [];
+let exportHistoryRequest = 0;
+const historyDeletesInProgress = new Set();
+
+async function deleteHistoryVideo(entry, button) {
+  if (!entry.id || entry.available !== true || historyDeletesInProgress.has(entry.id)) return;
+  const name = entry.display_name || entry.file_name || "this reel";
+  if (!window.confirm(`Permanently delete the video file for "${name}" from your PC?\n\nIts History entry and saved hook text will stay. This frees disk space and cannot be undone.`)) return;
+  historyDeletesInProgress.add(entry.id);
+  button.disabled = true; button.textContent = "Deleting…";
+  // Release Windows' preview file handle before deleting the export.
+  closeHistoryPreview();
+  try {
+    const response = await fetch(`/api/history/${encodeURIComponent(entry.id)}/file`, {method: "DELETE"});
+    const result = await response.json();
+    if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : `Could not delete video (${response.status}). Try again.`);
+    const freed = Number(result.freed_bytes || 0);
+    showToast(result.deleted ? `Video deleted${freed > 0 ? ` · ${(freed / 1048576).toFixed(1)} MB freed` : ''}. History kept.` : "Video is already missing. History kept.");
+    await loadExportHistory();
+  } catch (error) {
+    const status = document.getElementById("export-history-status");
+    if (status) status.textContent = `Delete failed: ${error.message}`;
+    showToast(`Delete failed: ${error.message}`);
+  } finally {
+    historyDeletesInProgress.delete(entry.id);
+    button.disabled = false; button.textContent = "Delete video";
+  }
+}
+
+function closeHistoryPreview() {
+  const video = document.getElementById("history-preview-video");
+  if (video) { video.pause(); video.removeAttribute("src"); video.load(); video.hidden = true; }
+  document.getElementById("history-preview-close")?.classList.add("hidden");
+  const name = document.getElementById("history-preview-name");
+  if (name) name.textContent = "Preview";
+  const status = document.getElementById("history-preview-status");
+  if (status) status.textContent = "Choose Preview on an exported reel.";
+}
+
+function previewHistoryEntry(entry) {
+  const video = document.getElementById("history-preview-video");
+  if (!video || entry.available !== true || !entry.export_location) return;
+  pauseVideo();
+  closeHistoryPreview();
+  const name = document.getElementById("history-preview-name");
+  if (name) name.textContent = entry.display_name || entry.file_name || "Exported reel";
+  const status = document.getElementById("history-preview-status");
+  if (status) status.textContent = "";
+  document.getElementById("history-preview-close")?.classList.remove("hidden");
+  video.src = `/api/media/stream?path=${encodeURIComponent(entry.export_location)}`;
+  video.hidden = false;
+  // Only the selected export is loaded; previews never create extra media files.
+  video.load();
+}
+
+function renderExportHistory() {
+  const list = document.getElementById("export-history-list");
+  const status = document.getElementById("export-history-status");
+  if (!list || !status) return;
+  const query = (document.getElementById("export-history-search")?.value || "").trim().toLowerCase();
+  const filter = document.getElementById("export-history-filter")?.value || "all";
+  const entries = exportHistoryEntries.filter(entry => {
+    const text = `${entry.display_name || entry.name || ''} ${entry.file_name || entry.export_location || ''}`.toLowerCase();
+    return text.includes(query) && (filter === "all" || (filter === "available" ? entry.available === true : entry.available !== true));
+  });
+  list.replaceChildren();
+  const textNode = (tag, className, text) => {
+    const node = document.createElement(tag); node.className = className; node.textContent = text; return node;
+  };
+  for (const entry of entries) {
+    const filename = entry.file_name || String(entry.export_location || '').split(/[\\/]/).pop() || '';
+    const name = entry.display_name || entry.name || filename.replace(/\.mp4$/i, '') || "Unnamed export";
+    const row = textNode("div", "export-history-row", ""); row.setAttribute("role", "listitem");
+    const identity = textNode("div", "export-history-identity", "");
+    const title = textNode("strong", "export-history-name", name); title.title = name;
+    identity.append(title, textNode("span", "export-history-filename", filename));
+    const date = entry.created_at || entry.created_date;
+    const parsedDate = date ? new Date(date) : null;
+    identity.append(textNode("time", "export-history-date", parsedDate && !Number.isNaN(parsedDate.getTime())
+      ? parsedDate.toLocaleString(undefined, {dateStyle: "medium", timeStyle: "short"}) : date || "Export date unavailable"));
+    if (typeof entry.hook_text === "string" && entry.hook_text.trim()) {
+      const hook = textNode("div", "export-history-hook", "");
+      hook.append(textNode("span", "export-history-hook-label", "Hook"), textNode("p", "", entry.hook_text));
+      identity.append(hook);
+    }
+    const details = textNode("div", "export-history-details", "");
+    const legacyAspect = /(?:_|\b)(9x16|16x9|1x1)(?:_|\b)/.exec(filename)?.[1]?.replace('x', ':');
+    details.append(textNode("span", "export-history-format", [String(entry.format || "MP4").toUpperCase(), entry.aspect_ratio || legacyAspect].filter(Boolean).join(" · ")));
+    const seconds = Number(entry.duration_seconds ?? parseFloat(entry.duration));
+    const duration = Number.isFinite(seconds) && seconds >= 0 ? `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}` : null;
+    details.append(textNode("span", "export-history-secondary", [duration, entry.resolution, entry.fps ? `${entry.fps} fps` : null].filter(Boolean).join(" · ")));
+    const available = entry.available === true;
+    const size = available && entry.size_bytes > 0 ? `${(entry.size_bytes / 1048576).toFixed(1)} MB` : null;
+    const actions = textNode("div", "export-history-file", "");
+    actions.append(textNode("span", `export-history-availability${available ? '' : ' missing'}`, available ? ["Available", size].filter(Boolean).join(" · ") : "File missing"));
+    if (available && entry.export_location) {
+      const buttons = textNode("div", "export-history-actions", "");
+      const preview = textNode("button", "btn btn-sm", "▶ Preview"); preview.type = "button";
+      preview.addEventListener("click", () => previewHistoryEntry(entry));
+      const download = textNode("a", "btn btn-sm", "Download");
+      download.href = `/api/media/download?path=${encodeURIComponent(entry.export_location)}`;
+      download.download = filename;
+      buttons.append(preview, download);
+      if (entry.id) {
+        const remove = textNode("button", "btn btn-sm export-history-delete", "Delete video"); remove.type = "button";
+        remove.title = "Delete the video file from your PC; keep its History entry";
+        remove.disabled = historyDeletesInProgress.has(entry.id);
+        remove.addEventListener("click", () => deleteHistoryVideo(entry, remove));
+        buttons.append(remove);
+      }
+      actions.append(buttons);
+    } else {
+      actions.append(textNode("span", "export-history-secondary", "Moved or deleted from disk"));
+    }
+    row.append(identity, details, actions); list.append(row);
+  }
+  const availableCount = exportHistoryEntries.filter(entry => entry.available === true).length;
+  status.textContent = !exportHistoryEntries.length ? "No exported reels yet. Your completed exports will appear here."
+    : !entries.length ? "No matching exports. Try another name or filter."
+    : `${entries.length} of ${exportHistoryEntries.length} exports · ${availableCount} available · ${exportHistoryEntries.length - availableCount} missing`;
+}
+
+async function loadExportHistory() {
+  const list = document.getElementById("export-history-list");
+  const status = document.getElementById("export-history-status");
+  if (!list || !status) return;
+  const request = ++exportHistoryRequest;
+  status.textContent = "Loading…";
+  try {
+    const response = await fetch("/api/history");
+    if (!response.ok) throw new Error(`History could not load (${response.status}). Try Refresh.`);
+    const entries = await response.json();
+    if (!Array.isArray(entries)) throw new Error("History could not be read. Try Refresh.");
+    if (request !== exportHistoryRequest) return;
+    exportHistoryEntries = entries.slice(0, 100);
+    renderExportHistory();
+  } catch (error) {
+    if (request !== exportHistoryRequest) return;
+    exportHistoryEntries = []; list.replaceChildren(); closeHistoryPreview();
+    status.textContent = error.message;
+  }
+}
+
+async function reloadStudio() {
+  const button = document.getElementById("btn-reload-studio");
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
+  try {
+    // A local blob URL cannot survive a reload; let its existing upload finish.
+    if (state._uploadPromise || String(state.videoPath || "").startsWith("blob:")) {
+      await ensureServerVideoPathForAnalysis();
+    }
+    if (projectSaveTimer !== null) {
+      window.clearTimeout(projectSaveTimer);
+      projectSaveTimer = null;
+    }
+    if (!persistProjectState()) throw new Error("Your edits could not be saved. Free some browser storage and try again.");
+    window.location.reload();
+  } catch (error) {
+    console.error("Studio reload failed:", error);
+    showToast(`Could not reload Studio: ${error.message}`);
+    if (button) button.disabled = false;
+  }
+}
+
 function setupSettingsAndNav() {
+  setupExportName();
+  document.getElementById("btn-reload-studio")?.addEventListener("click", reloadStudio);
   el.navTabs.forEach(tab => {
     tab.addEventListener("click", () => {
       el.navTabs.forEach(t => t.classList.remove("active"));
       el.tabContents.forEach(c => c.classList.remove("active"));
       tab.classList.add("active");
       const targetView = tab.dataset.view;
+      document.querySelector(".studio-layout")?.classList.toggle("history-open", targetView === "history");
+      closeHistoryPreview();
+      if (targetView === "history") {
+        pauseVideo();
+        document.getElementById("music-audition")?.pause();
+      }
       const targetEl = document.getElementById(`view-${targetView}`);
       if (targetEl) targetEl.classList.add("active");
+      if (el.studioEditWorkspace) {
+        el.studioEditWorkspace.classList.toggle("hidden", targetView !== "studio");
+      }
 
-      if (targetView === "history") loadHistory();
-      if (targetView === "templates") loadTemplatesCatalog();
       if (targetView === "schedule") loadScheduleView();
+      if (targetView === "history") void loadExportHistory();
     });
   });
 
@@ -5497,32 +7609,178 @@ function setupSettingsAndNav() {
 
   if (el.btnResetSession) {
     el.btnResetSession.addEventListener("click", () => {
-      if (confirm("Reset current project? This will clear the loaded video and settings to start fresh.")) {
-        localStorage.removeItem("reel_forge_project");
-        localStorage.removeItem("reel_yt_url");
-        window.location.reload();
-      }
+      localStorage.removeItem("reel_forge_project");
+      localStorage.removeItem("reel_yt_url");
+      localStorage.removeItem("reel_ig_url");
+      window.location.reload();
     });
   }
+  if (el.sliderWindowInset && state.adjustments) {
+    state.adjustments.windowInset = getSongWindowInset(state.adjustments.windowInset);
+    el.sliderWindowInset.value = state.adjustments.windowInset;
+    if (el.valWindowInset) el.valWindowInset.textContent = `${state.adjustments.windowInset}px`;
+  }
+
+  if (el.inputAiInstruction) {
+    el.inputAiInstruction.addEventListener("input", (e) => {
+      state.aiInstruction = e.target.value.slice(0, 24000);
+      saveProjectState();
+    });
+  }
+  if (el.selectHookStyle) {
+    el.selectHookStyle.value = state.hookStyle;
+    el.selectHookStyle.addEventListener("change", (e) => {
+      state.hookStyle = ["white_on_black", "black_on_white", "scene_blend"].includes(e.target.value)
+        ? e.target.value
+        : "outlined";
+      if (["white_on_black", "black_on_white"].includes(state.hookStyle)) {
+        state.hookFont = state.hookStyle === "black_on_white" ? "arial_black" : "georgia";
+        if (el.selectHookFont) {
+          el.selectHookFont.value = state.hookFont;
+          applyFontControl(el.selectHookFont, state.hookFont);
+        }
+      }
+      renderReel();
+      saveProjectState();
+    });
+  }
+}
+
+// -------------------------------------------------------------
+// INSTAGRAM DOWNLOAD & IMPORT ENGINE
+// -------------------------------------------------------------
+function setupInstagramDownloader() {
+  if (!el.inputIgUrl || !el.btnIgDownload) return;
+
+  const resetButton = () => {
+    el.btnIgDownload.disabled = false;
+    if (el.btnIgText) el.btnIgText.textContent = "⚡ Download & Load";
+  };
+
+  el.inputIgUrl.addEventListener("input", (event) => {
+    localStorage.setItem("reel_ig_url", event.target.value.trim());
+    localStorage.removeItem("reel_ig_url_loaded");
+    saveProjectState();
+  });
+
+  const loadInstagramResult = async (task) => {
+    await loadFile(task.file_path, task.title);
+    showToast("Instagram video downloaded. Use the Studio buttons when you want AI moments or subtitles.");
+    saveProjectState();
+  };
+
+  el.btnIgDownload.addEventListener("click", async () => {
+    const url = el.inputIgUrl.value.trim();
+    if (!url) {
+      showToast("Please enter an Instagram Reel or video-post URL");
+      return;
+    }
+    localStorage.setItem("reel_ig_url", url);
+    saveProjectState();
+    el.btnIgDownload.disabled = true;
+    if (el.btnIgText) el.btnIgText.textContent = "Connecting to Instagram...";
+    if (el.igProgressBox) el.igProgressBox.classList.remove("hidden");
+    if (el.igProgressBar) el.igProgressBar.style.width = "10%";
+    if (el.igProgressPercent) el.igProgressPercent.textContent = "10%";
+    if (el.igProgressLabel) el.igProgressLabel.textContent = "Fetching public video details...";
+
+    try {
+      const startRes = await fetch("/api/instagram/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url })
+      });
+      const startData = await startRes.json();
+      if (!startRes.ok) throw new Error(startData.detail || "Instagram download failed");
+
+      let pollFinished = false;
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`/api/instagram/status/${startData.task_id}`);
+          const task = await statusRes.json();
+          if (pollFinished) return;
+          if (el.igProgressBar) el.igProgressBar.style.width = `${task.progress}%`;
+          if (el.igProgressPercent) el.igProgressPercent.textContent = `${Math.round(task.progress)}%`;
+          if (el.igProgressLabel) el.igProgressLabel.textContent = task.message || "Downloading...";
+          if (task.status === "completed") {
+            pollFinished = true;
+            clearInterval(pollInterval);
+            localStorage.setItem("reel_ig_url_loaded", url);
+            resetButton();
+            await loadInstagramResult(task);
+            setTimeout(() => el.igProgressBox && el.igProgressBox.classList.add("hidden"), 4000);
+          } else if (task.status === "error") {
+            pollFinished = true;
+            clearInterval(pollInterval);
+            resetButton();
+            showToast("Instagram download failed: " + task.message);
+          }
+        } catch (pollError) {
+          pollFinished = true;
+          clearInterval(pollInterval);
+          resetButton();
+          showToast("Error tracking Instagram download");
+        }
+      }, 800);
+    } catch (error) {
+      resetButton();
+      if (el.igProgressLabel) el.igProgressLabel.textContent = "Error: " + error.message;
+      showToast("Instagram download failed: " + error.message);
+    }
+  });
+
+  el.inputIgUrl.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") el.btnIgDownload.click();
+  });
 }
 
 // -------------------------------------------------------------
 // PROJECT STATE PERSISTENCE ENGINE
 // -------------------------------------------------------------
 function saveProjectState() {
+  // Persisting the full project also serializes every lyric cue. Delay repeated
+  // slider/key input writes until the creator pauses, but keep test/non-browser
+  // callers synchronous and flush before the page closes.
+  if (typeof window !== "undefined" && typeof window.setTimeout === "function") {
+    if (projectSaveTimer !== null) window.clearTimeout(projectSaveTimer);
+    projectSaveTimer = window.setTimeout(() => {
+      projectSaveTimer = null;
+      persistProjectState();
+    }, 220);
+    return;
+  }
+  persistProjectState();
+}
+
+let projectSaveTimer = null;
+
+function persistProjectState() {
   const project = {
     ytUrl: el.inputYtUrl ? el.inputYtUrl.value : "",
-    activeSourceTab: el.tabSrcYt && el.tabSrcYt.classList.contains("active") ? "yt" : "local",
+    igUrl: el.inputIgUrl ? el.inputIgUrl.value : "",
+    activeSourceTab: el.tabSrcIg && el.tabSrcIg.classList.contains("active") ? "ig" : (el.tabSrcYt && el.tabSrcYt.classList.contains("active") ? "yt" : "local"),
     videoPath: state.videoPath || "",
+    imageSourcePath: state.imageSourcePath || "",
+    imageDuration: state.imageDuration || null,
+    music: state.music || null,
+    reelName: state.reelName || "",
+    videoAudio: state.videoAudio || null,
     videoTitle: el.activeFileName ? el.activeFileName.textContent : "",
     videoMeta: state.videoMeta || null,
     dayNumber: state.dayNumber,
     seriesFormat: state.seriesFormat,
+    hookFont: ["arial_black", "segoe", "bahnschrift", "oswald", "cooper_black", "georgia", "segoe_print"].includes(state.hookFont)
+      ? state.hookFont
+      : "arial_black",
+    hookStyle: state.hookStyle || "outlined",
+    hookFade: { start: Math.max(0, Number(state.hookFade?.start) || 0) },
+    aiInstruction: state.aiInstruction || "",
     showSeriesText: state.showSeriesText !== false,
     songName: state.songName,
     animeName: state.animeName,
-    startTime: state.startTime,
-    endTime: state.endTime,
+    caption: state.caption || "",
+    startTime: state._imageDurationOriginalRange?.startTime ?? state.startTime,
+    endTime: state._imageDurationOriginalRange?.endTime ?? state.endTime,
     isLooping: state.isLooping,
     adjustments: state.adjustments,
     activeTemplate: state.activeTemplate,
@@ -5531,30 +7789,47 @@ function saveProjectState() {
     lyrics: state.lyrics || [],
     showLyrics: state.showLyrics !== false,
     subtitleStyle: state.subtitleStyle || "minimal",
+    subtitleFont: state.subtitleFont || "segoe",
+    subtitleAnimation: state.subtitleAnimation || "auto",
     subtitleLanguage: state.subtitleLanguage || "both",
     smartLoop: state.smartLoop !== false,
     loopMode: state.loopMode || "circular",
     loopFadeDuration: state.loopFadeDuration || 0.35,
+    audioMaster: { enabled: state.audioMaster?.enabled === true },
     fadeTransition: state.fadeTransition || { mode: "none", duration: 0.50 },
     watermark: state.watermark || { enabled: false, text: "lap_lac7" },
     creatorBadge: state.creatorBadge || { enabled: false, text: "@lap_lac7" },
     textElements: state.textElements || null,
     colorFilter: state.colorFilter || "original",
+    hideRegions: state.hideRegions || [],
     filterIntensity: state.filterIntensity !== undefined ? state.filterIntensity : 100,
     colorAdjustments: state.colorAdjustments || { brightness: 0, contrast: 100, saturation: 100, warmth: 0, vignette: 0 }
   };
   try {
     localStorage.setItem("reel_forge_project", JSON.stringify(project));
+    return true;
   } catch (e) {
     console.warn("Could not save project to localStorage:", e);
+    return false;
   }
+}
+
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("pagehide", () => {
+    if (projectSaveTimer !== null) {
+      window.clearTimeout(projectSaveTimer);
+      projectSaveTimer = null;
+    }
+    persistProjectState();
+  });
 }
 
 async function restoreProjectState() {
   try {
     const raw = localStorage.getItem("reel_forge_project");
     const savedYtUrl = localStorage.getItem("reel_yt_url");
-    if (!raw && !savedYtUrl) return;
+    const savedIgUrl = localStorage.getItem("reel_ig_url");
+    if (!raw && !savedYtUrl && !savedIgUrl) return;
 
     let project = {};
     if (raw) {
@@ -5568,11 +7843,21 @@ async function restoreProjectState() {
     if (ytUrl && el.inputYtUrl) {
       el.inputYtUrl.value = ytUrl;
     }
-    if ((project.activeSourceTab === "yt" || ytUrl) && el.tabSrcYt) {
+    const igUrl = project.igUrl || savedIgUrl || "";
+    if (igUrl && el.inputIgUrl) {
+      el.inputIgUrl.value = igUrl;
+    }
+    if ((project.activeSourceTab === "ig" || (!ytUrl && igUrl)) && el.tabSrcIg) {
+      el.tabSrcIg.click();
+    } else if ((project.activeSourceTab === "yt" || ytUrl) && el.tabSrcYt) {
       el.tabSrcYt.click();
     }
 
     state.showSeriesText = project.showSeriesText !== false;
+    state.music = project.music || null;
+    state.reelName = typeof project.reelName === "string" ? project.reelName : "";
+    syncExportName();
+    state.videoAudio = project.videoAudio || null;
 
     // Restore text elements layout
     if (project.textElements) {
@@ -5598,6 +7883,18 @@ async function restoreProjectState() {
       }
       if (el.checkWatermark) el.checkWatermark.checked = !!state.watermark.enabled;
       if (el.inputWatermarkText) el.inputWatermarkText.value = state.watermark.text || "lap_lac7";
+      const styleControl = document.getElementById("select-watermark-style");
+      const rotationControl = document.getElementById("select-watermark-rotation");
+      const blendHint = document.getElementById("watermark-blend-hint");
+      if (styleControl) styleControl.value = state.watermark.style || "clean";
+      const watermarkFontControl = document.getElementById("select-watermark-font");
+      if (watermarkFontControl) { watermarkFontControl.value = FONT_STACKS[state.watermark.font] ? state.watermark.font : "bahnschrift"; applyFontControl(watermarkFontControl, watermarkFontControl.value); }
+      void refreshWatermarkFont();
+      if (rotationControl) {
+        rotationControl.value = String(state.watermark.rotation ?? 90);
+        rotationControl.disabled = state.watermark.style !== "scene_blend";
+      }
+      if (blendHint) blendHint.classList.toggle("hidden", state.watermark.style !== "scene_blend");
       if (el.watermarkInputGroup) {
         el.watermarkInputGroup.classList.toggle("hidden", !state.watermark.enabled);
       }
@@ -5622,9 +7919,40 @@ async function restoreProjectState() {
       state.dayNumber = project.dayNumber;
       if (el.inputDay) el.inputDay.value = state.dayNumber;
     }
-    if (project.seriesFormat) {
+    if (typeof project.seriesFormat === "string") {
       state.seriesFormat = project.seriesFormat;
       if (el.inputSeriesText) el.inputSeriesText.value = state.seriesFormat;
+    }
+    const savedHookFont = ["haettenschweiler", "arial_narrow"].includes(project.hookFont) ? "oswald" : project.hookFont;
+    state.hookFont = AVAILABLE_HOOK_FONTS.includes(savedHookFont) ? savedHookFont : DEFAULT_HOOK_FONT;
+    if (el.selectHookFont) { el.selectHookFont.value = state.hookFont; applyFontControl(el.selectHookFont, state.hookFont); }
+    state.hookStyle = ["white_on_black", "black_on_white", "scene_blend"].includes(project.hookStyle)
+      ? project.hookStyle
+      : "outlined";
+    if (state.hookStyle === "black_on_white") {
+      state.hookFont = "arial_black";
+      if (el.selectHookFont) {
+        el.selectHookFont.value = state.hookFont;
+        applyFontControl(el.selectHookFont, state.hookFont);
+      }
+    }
+    state.aiInstruction = typeof project.aiInstruction === "string"
+      ? project.aiInstruction.slice(0, 24000)
+      : [project.hookInstruction, project.captionInstruction].find((instruction) => typeof instruction === "string" && instruction.trim())?.slice(0, 24000) || "";
+    if (el.inputAiInstruction) el.inputAiInstruction.value = state.aiInstruction;
+    if (el.selectHookStyle) el.selectHookStyle.value = state.hookStyle;
+    if (project.hookFade && typeof project.hookFade === "object") {
+      // Older projects may contain a duration; use the current natural fade speed.
+      state.hookFade = { start: Math.max(0, Number(project.hookFade.start) || 0) };
+    }
+    if (typeof syncHookFadeControls === "function") syncHookFadeControls();
+    // Projects saved before the readable hook update used a 38px automatic
+    // headline. Preserve deliberately resized hooks, but migrate that old
+    // default so existing projects are immediately legible after refresh.
+    const restoredSeries = state.textElements?.series;
+    if (restoredSeries && !restoredSeries._custom && Number(restoredSeries.size) === 38) {
+      restoredSeries.size = 68;
+      restoredSeries.lineGap = Math.max(16, Number(restoredSeries.lineGap) || 0);
     }
     if (project.songName) {
       state.songName = project.songName;
@@ -5634,16 +7962,17 @@ async function restoreProjectState() {
       state.animeName = project.animeName;
       if (el.inputAnimeName) el.inputAnimeName.value = state.animeName;
     }
+    if (typeof project.caption === "string" && project.caption.trim()) {
+      state.caption = project.caption;
+      if (el.aiCaptionOutput) el.aiCaptionOutput.value = state.caption;
+      if (el.schedCaption) el.schedCaption.value = state.caption;
+      if (el.aiCaptionBox) el.aiCaptionBox.classList.remove("hidden");
+    }
 
     // 3. Clip times
     if (project.startTime !== undefined) state.startTime = project.startTime;
     if (project.endTime !== undefined) state.endTime = project.endTime;
-    if (project.isLooping !== undefined) {
-      state.isLooping = project.isLooping;
-      if (el.btnLoopClip) {
-        el.btnLoopClip.classList.toggle("active", state.isLooping);
-      }
-    }
+    state.isLooping = true;
 
     // 4. Adjustments & Template
     if (project.activeTemplate) {
@@ -5667,7 +7996,10 @@ async function restoreProjectState() {
 
     // 5. Video File
     if (project.videoPath && !project.videoPath.startsWith("blob:")) {
-      await loadFile(project.videoPath, project.videoTitle);
+      await loadFile(project.videoPath, project.videoTitle, null, {preserveReelName: true});
+      state.imageSourcePath = project.imageSourcePath || "";
+      state.imageDuration = Number(project.imageDuration) || null;
+      if (state.imageDuration) syncImageDurationInputs(state.imageDuration);
 
       // loadFile initializes helpful defaults for a new file; restore the saved
       // project values afterwards so refresh never changes its title or clip.
@@ -5700,7 +8032,11 @@ async function restoreProjectState() {
 
     // 7. Live Dual Subtitles
     if (project.lyrics && Array.isArray(project.lyrics)) {
-      state.lyrics = project.lyrics;
+      state.lyrics = project.lyrics.map(cue => ({ ...cue, timeline_basis: cue.timeline_basis || "absolute" }));
+      // Project lyrics always use the source-video clock. Keep the same set as
+      // fullLyrics so changing the selected song moment never clears them.
+      state.fullLyrics = state.lyrics;
+      state.lyricsByMoment = { ...(state.lyricsByMoment || {}), full: state.lyrics };
       renderLyricsList(state.lyrics);
     }
     if (project.showLyrics !== undefined) {
@@ -5708,7 +8044,7 @@ async function restoreProjectState() {
       if (el.checkSubtitles) el.checkSubtitles.checked = state.showLyrics;
     }
     if (project.subtitleStyle) {
-      const allowed = ["minimal", "bold_lyrics", "neon_glow", "retro_90s", "karaoke", "cinematic", "impact", "lofi_pastel", "jp_en", "anime"];
+  const allowed = ["minimal", "bold_lyrics", "pop_bounce", "neon_glow", "retro_90s", "manga_flash", "karaoke", "cinematic", "impact", "lofi_pastel", "white_on_black", "jp_en", "anime"];
       state.subtitleStyle = allowed.includes(project.subtitleStyle) ? project.subtitleStyle : "minimal";
       const allStyleCards = document.querySelectorAll(".sub-style-card, .sub-style-btn");
       if (allStyleCards) {
@@ -5717,12 +8053,19 @@ async function restoreProjectState() {
         });
       }
     }
+    state.subtitleAnimation = SUBTITLE_ANIMATION_OPTIONS.includes(project.subtitleAnimation)
+      ? project.subtitleAnimation
+      : "auto";
+    syncSubtitleAnimation();
     state.subtitleLanguage = project.subtitleLanguage || "both";
     if (el.subLangBtns) {
       el.subLangBtns.forEach(b => {
         b.classList.toggle("active", (b.dataset.lang || "both") === state.subtitleLanguage);
       });
     }
+
+    state.hideRegions = normalizeHideRegions(project.hideRegions);
+    syncHideAreaControls();
 
     // 8. Smart Seamless Loop
     if (project.smartLoop !== undefined) {
@@ -5737,6 +8080,13 @@ async function restoreProjectState() {
           b.classList.toggle("active", b.dataset.mode === state.loopMode);
         });
       }
+    }
+
+    if (project.audioMaster) {
+      state.audioMaster = {
+        enabled: project.audioMaster.enabled === true
+      };
+      if (el.checkAudioMaster) el.checkAudioMaster.checked = state.audioMaster.enabled;
     }
 
     // 9. Black Screen Fade Transition
@@ -5777,27 +8127,6 @@ async function restoreProjectState() {
   } catch (e) {
     console.warn("Could not restore project state:", e);
   }
-}
-
-async function loadHistory() {
-  try {
-    const res = await fetch("/api/history");
-    const list = await res.json();
-    if (!list || list.length === 0) {
-      el.historyList.innerHTML = '<p class="empty-state">No reels exported yet. Create your first reel!</p>';
-      return;
-    }
-
-    el.historyList.innerHTML = list.map(item => `
-      <div class="history-item">
-        <div>
-          <strong style="color:#fff;">Day ${item.day} · ${item.song} (${item.anime})</strong>
-          <div style="font-size:11px;color:var(--text-muted)">${item.template} · ${item.duration} · ${item.created_date}</div>
-        </div>
-        <div style="font-size:11px;color:var(--neon-cyan);font-weight:700;">${item.export_location.split(/[\\/]/).pop()}</div>
-      </div>
-    `).join("");
-  } catch (e) {}
 }
 
 async function loadTemplatesCatalog() {
@@ -6150,13 +8479,36 @@ window.schedDeleteItem = async (itemId) => {
 // -------------------------------------------------------------
 // INITIALIZATION
 // -------------------------------------------------------------
+function placeStudioPanels() {
+  if (el.dockFilters && el.workspaceFilterSlot && el.dockFilters.parentElement !== el.workspaceFilterSlot) {
+    el.workspaceFilterSlot.appendChild(el.dockFilters);
+  }
+  if (el.reelStyleCard && el.workspaceReelStyleSlot && el.reelStyleCard.parentElement !== el.workspaceReelStyleSlot) {
+    el.workspaceReelStyleSlot.appendChild(el.reelStyleCard);
+  }
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
+  try {
+    if (!window.VibeColorProfiles) throw new Error("Custom RGB script is unavailable.");
+    await window.VibeColorProfiles.load();
+  } catch (error) {
+    console.error("Custom RGB initialization failed:", error);
+    const status = document.getElementById("color-profile-status");
+    if (status) {
+      status.textContent = "Custom RGB could not load. Refresh Vibe Editor to retry.";
+      status.classList.remove("hidden");
+    }
+  }
+  placeStudioPanels();
   setupFitView();
   setupTimeline();
   setupYouTubeDownloader();
+  setupInstagramDownloader();
   setupFileHandling();
   setupMetadataAndAI();
   setupTextCanvasInteraction();
+  setupHideAreas();
   setupTemplatesAndSliders();
   setupVideoFilters();
   setupVideoAdjustments();
@@ -6167,4 +8519,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   await loadTemplate("cinematic");
   startRenderLoop();
   await restoreProjectState();
+  if (state.colorFilter === "intel_custom" && !window.VibeColorProfiles?.isAvailable("intel_custom")) {
+    showToast("Your saved Custom RGB filter is unavailable. Refresh Vibe Editor to restore its preview.");
+  }
+  void refreshHookEmoji();
+  if (window.musicStudio) await window.musicStudio.init();
 });

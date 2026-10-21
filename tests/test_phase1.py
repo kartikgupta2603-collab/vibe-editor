@@ -35,10 +35,10 @@ def test_templates():
     assert cinematic["name"] == "Cinematic"
     print(f"  templates OK ({len(tpls)} found)")
 
-def test_render():
+def test_render(tmp_path):
     print("Testing Reel rendering...")
     src = str(BASE_DIR / "temp" / "test_16_9_with_audio.mp4")
-    out = str(BASE_DIR / "exports" / "test_kick_back_reel.mp4")
+    out = str(tmp_path / "test_kick_back_reel.mp4")
     tpl = template_manager.get_template("cinematic")
 
     rendered = renderer.render_reel(
@@ -57,16 +57,16 @@ def test_render():
     # Inspect output
     out_info = probe_video(rendered)
     print(f"  Exported resolution: {out_info.width}x{out_info.height}")
-    assert out_info.width == 1080 and out_info.height == 1920, f"Expected 1080x1920, got {out_info.width}x{out_info.height}"
+    assert out_info.width == 2160 and out_info.height == 3840, f"Expected 2160x3840, got {out_info.width}x{out_info.height}"
     assert out_info.aspect_ratio == "9:16", f"Expected 9:16, got {out_info.aspect_ratio}"
     assert out_info.has_audio is True, "Expected audio in final Reel"
     assert out_info.duration > 3.5, f"Expected ~4s duration, got {out_info.duration}"
-    print("  render 1080x1920 9:16 with audio OK")
+    print("  render 2160x3840 9:16 with audio OK")
 
-def test_render_no_audio_source():
+def test_render_no_audio_source(tmp_path):
     print("Testing Reel rendering from audio-less source...")
     src = str(BASE_DIR / "temp" / "test_no_audio.mp4")
-    out = str(BASE_DIR / "exports" / "test_no_audio_reel.mp4")
+    out = str(tmp_path / "test_no_audio_reel.mp4")
     tpl = template_manager.get_template("minimal")
 
     rendered = renderer.render_reel(
@@ -82,7 +82,7 @@ def test_render_no_audio_source():
     )
     assert Path(rendered).exists()
     out_info = probe_video(rendered)
-    assert out_info.width == 1080 and out_info.height == 1920
+    assert out_info.width == 2160 and out_info.height == 3840
     print("  render audio-less source fallback OK")
 
 if __name__ == "__main__":

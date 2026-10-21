@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 from PIL import Image, ImageDraw
 from app.video.renderer import renderer
 from app.video.probe import probe_video
-from app.video.renderer import _cover_scale
+from app.video.renderer import _cover_scale, _contain_geometry
 
 def extract_preview_frame(video_path: str, timestamp: float, output_image_path: str) -> str:
     path = Path(video_path).resolve()
@@ -84,9 +84,13 @@ def render_preview_still(
     zoom = bg_cfg.get("zoom", 1.25)
 
     vid_cfg = template.get("video", {})
-    v_offset = vid_cfg.get("vertical_offset", 0 if aspect_ratio == "16:9" else -40)
+    v_offset = vid_cfg.get("vertical_offset", 0)
     fg_scale = vid_cfg.get("scale", 1.0)
-    curved_border = vid_cfg.get("curved_border", True)
+    border_shape = str(vid_cfg.get("border_shape", "")).lower()
+    if border_shape not in {"curved", "circular", "straight"}:
+        border_shape = "straight" if vid_cfg.get("curved_border", True) is False else "curved"
+    curved_border = border_shape != "straight"
+    circular_border = border_shape == "circular"
     c_radius = int(vid_cfg.get("corner_radius", 16)) if curved_border else 0
     mask_png = None
 
@@ -117,12 +121,15 @@ def render_preview_still(
                     f"scale=1920:1080:flags=fast_bilinear,"
                     f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}[bg];"
                 )
-            if curved_border and c_radius > 0:
+            if circular_border or (curved_border and c_radius > 0):
                 eff_rad = min(c_radius, fg_w // 2, fg_h // 2)
                 mask_png = str(temp_dir / f"preview_mask_{int(time.time()*1000)}.png")
                 mask_img = Image.new("RGBA", (fg_w, fg_h), (0, 0, 0, 0))
                 mask_draw = ImageDraw.Draw(mask_img)
-                mask_draw.rounded_rectangle([0, 0, fg_w, fg_h], radius=eff_rad, fill=(255, 255, 255, 255))
+                if circular_border:
+                    mask_draw.ellipse([0, 0, fg_w, fg_h], fill=(255, 255, 255, 255))
+                else:
+                    mask_draw.rounded_rectangle([0, 0, fg_w, fg_h], radius=eff_rad, fill=(255, 255, 255, 255))
                 mask_img.save(mask_png, "PNG")
                 fg_filter = f"[0:v]scale={fg_w}:{fg_h}[fg_raw];[2:v]scale={fg_w}:{fg_h}[fg_mask];[fg_raw][fg_mask]alphamerge[fg];"
             else:
@@ -152,12 +159,15 @@ def render_preview_still(
                 f"scale=1080:1080:flags=fast_bilinear,"
                 f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}[bg];"
             )
-        if curved_border and c_radius > 0:
+        if circular_border or (curved_border and c_radius > 0):
             eff_rad = min(c_radius, fg_w // 2, fg_h // 2)
             mask_png = str(temp_dir / f"preview_mask_{int(time.time()*1000)}.png")
             mask_img = Image.new("RGBA", (fg_w, fg_h), (0, 0, 0, 0))
             mask_draw = ImageDraw.Draw(mask_img)
-            mask_draw.rounded_rectangle([0, 0, fg_w, fg_h], radius=eff_rad, fill=(255, 255, 255, 255))
+            if circular_border:
+                mask_draw.ellipse([0, 0, fg_w, fg_h], fill=(255, 255, 255, 255))
+            else:
+                mask_draw.rounded_rectangle([0, 0, fg_w, fg_h], radius=eff_rad, fill=(255, 255, 255, 255))
             mask_img.save(mask_png, "PNG")
             fg_filter = f"[0:v]scale={fg_w}:{fg_h}[fg_raw];[2:v]scale={fg_w}:{fg_h}[fg_mask];[fg_raw][fg_mask]alphamerge[fg];"
         else:
@@ -169,12 +179,9 @@ def render_preview_still(
         )
     else:
         # 9:16 vertical
-        fg_w = int(1080 * fg_scale)
-        fg_h = int(round(fg_w * vid_h / vid_w))
-        if fg_h % 2 != 0: fg_h += 1
-        if fg_w % 2 != 0: fg_w += 1
-        fg_x = f"(1080-{fg_w})/2"
-        fg_y = f"(1920-{fg_h})/2+({v_offset})"
+        fg_w, fg_h, fg_left, fg_top = _contain_geometry(
+            vid_w, vid_h, 1080, 1920, fg_scale, v_offset)
+        fg_x, fg_y = str(fg_left), str(fg_top)
         if bg_type in ("black", "white"):
             bg_filter = f"color=c={bg_type}:s=1080x1920:d=1:r=30[bg];"
         else:
@@ -188,12 +195,15 @@ def render_preview_still(
                 f"scale=1080:1920:flags=fast_bilinear,"
                 f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}[bg];"
             )
-        if curved_border and c_radius > 0:
+        if circular_border or (curved_border and c_radius > 0):
             eff_rad = min(c_radius, fg_w // 2, fg_h // 2)
             mask_png = str(temp_dir / f"preview_mask_{int(time.time()*1000)}.png")
             mask_img = Image.new("RGBA", (fg_w, fg_h), (0, 0, 0, 0))
             mask_draw = ImageDraw.Draw(mask_img)
-            mask_draw.rounded_rectangle([0, 0, fg_w, fg_h], radius=eff_rad, fill=(255, 255, 255, 255))
+            if circular_border:
+                mask_draw.ellipse([0, 0, fg_w, fg_h], fill=(255, 255, 255, 255))
+            else:
+                mask_draw.rounded_rectangle([0, 0, fg_w, fg_h], radius=eff_rad, fill=(255, 255, 255, 255))
             mask_img.save(mask_png, "PNG")
             fg_filter = f"[0:v]scale={fg_w}:{fg_h}[fg_raw];[2:v]scale={fg_w}:{fg_h}[fg_mask];[fg_raw][fg_mask]alphamerge[fg];"
         else:

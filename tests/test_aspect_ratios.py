@@ -11,10 +11,10 @@ from app.video.preview import render_preview_still
 from app.templates.template_manager import template_manager
 from PIL import Image
 
-def test_16_9_rendering():
+def test_16_9_rendering(tmp_path):
     print("Testing 16:9 Landscape Rendering...")
     src = str(BASE_DIR / "temp" / "test_16_9_with_audio.mp4")
-    out = str(BASE_DIR / "exports" / "test_16_9_landscape.mp4")
+    out = str(tmp_path / "test_16_9_landscape.mp4")
     tpl = template_manager.get_template("cinematic")
 
     rendered = renderer.render_reel(
@@ -35,10 +35,10 @@ def test_16_9_rendering():
     assert info.width == 1920 and info.height == 1080, f"Expected 1920x1080, got {info.width}x{info.height}"
     print("  16:9 Landscape export OK!")
 
-def test_1_1_rendering():
+def test_1_1_rendering(tmp_path):
     print("Testing 1:1 Square Rendering...")
     src = str(BASE_DIR / "temp" / "test_16_9_with_audio.mp4")
-    out = str(BASE_DIR / "exports" / "test_1_1_square.mp4")
+    out = str(tmp_path / "test_1_1_square.mp4")
     tpl = template_manager.get_template("cinematic")
 
     rendered = renderer.render_reel(

@@ -97,9 +97,11 @@ def test_ass_subtitles_english_color_and_overlap_prevention():
     # Japanese style has &H00000000
     assert "Style: Japanese,Yu Gothic,36,&H00000000" in ass_content
     # English style has &H00000000 (exact same color as Japanese)
-    assert "Style: English,Segoe UI,24,&H00000000" in ass_content
-    # English has 2 lines (due to \N), so Japanese vertical margin is raised above 240 (e.g. 195 + 2*36 + 16 = 283)
-    assert ",0,0,283,," in ass_content, "Japanese dialogue was not lifted up to prevent multi-line English collision"
+    assert "Style: English,Segoe UI,26.88,&H00000000" in ass_content
+    # English has two lines. Its readability scale must also increase the
+    # Japanese line's separation, preventing a collision in the rendered reel.
+    jp_dialogue = next(line for line in ass_content.splitlines() if line.startswith("Dialogue: 1,") and ",Japanese," in line)
+    assert int(jp_dialogue.split(",")[7]) > 240, "Japanese dialogue was not lifted above the English block"
 
 def test_ass_subtitles_english_inherits_primary_color():
     temp_dir = BASE_DIR / "temp"
@@ -123,7 +125,7 @@ def test_ass_subtitles_english_inherits_primary_color():
     assert success is True
     ass_content = Path(out_ass).read_text(encoding="utf-8")
     assert "Style: Japanese,Yu Gothic,39,&H00F8BD38" in ass_content
-    assert "Style: English,Segoe UI,26,&H00F8BD38" in ass_content
+    assert "Style: English,Segoe UI,29.12,&H00F8BD38" in ass_content
 
 def test_ass_subtitles_automatic_color_adaptation():
     temp_dir = BASE_DIR / "temp"

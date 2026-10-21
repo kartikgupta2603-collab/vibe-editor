@@ -11,7 +11,7 @@ def test_javascript_watermark_logic():
 
     # 1. Verify text measurement occurs BEFORE ctx.restore() in watermark draw
     # Pattern: measureText followed by restore() within watermark block
-    wm_block = re.search(r"// 6b\. USERNAME WATERMARK.*?(?=// 6c\. CREATOR AVATAR)", js, re.DOTALL)
+    wm_block = re.search(r"// 6b\. USERNAME WATERMARK.*?(?=\n}\n\nfunction createStudioTextOverlay)", js, re.DOTALL)
     assert wm_block, "Could not find watermark block in app.js"
     wm_code = wm_block.group(0)
     measure_pos = wm_code.find("ctx.measureText(wmText)")

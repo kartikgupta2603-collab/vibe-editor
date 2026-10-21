@@ -3,6 +3,8 @@ import os
 import shutil
 import tempfile
 import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -75,19 +77,39 @@ class ProjectManager:
         anime: str,
         duration: float,
         template: str,
-        export_path: str
+        export_path: str,
+        *,
+        name: Optional[str] = None,
+        format: str = "mp4",
+        aspect_ratio: Optional[str] = None,
+        resolution: Optional[str] = None,
+        fps: Optional[float] = None,
+        hook_text: Optional[str] = None,
     ) -> Dict[str, Any]:
         history = self._load_history()
         entry = {
-            "id": f"hist_{int(time.time()*1000)}",
+            "id": f"hist_{uuid.uuid4().hex}",
             "day": day,
             "song": song,
             "anime": anime,
             "duration": f"{round(duration, 1)}s",
             "template": template,
             "created_date": time.strftime("%Y-%m-%d %H:%M"),
-            "export_location": export_path
+            "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "export_location": export_path,
+            "name": name or Path(export_path).stem,
+            "file_name": Path(export_path).name,
+            "format": format,
+            "duration_seconds": round(duration, 3),
         }
+        if aspect_ratio:
+            entry["aspect_ratio"] = aspect_ratio
+        if resolution:
+            entry["resolution"] = resolution
+        if fps is not None:
+            entry["fps"] = fps
+        if hook_text is not None:
+            entry["hook_text"] = hook_text
         history.insert(0, entry)
         self._save_history(history[:100]) # keep latest 100
         return entry

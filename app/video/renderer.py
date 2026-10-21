@@ -1,7 +1,12 @@
 import logging
 import math
+import re
 import os
 import sys
+import copy
+import base64
+import binascii
+import io
 import subprocess
 import tempfile
 import time
@@ -11,9 +16,49 @@ from typing import Dict, Any, Optional, Callable
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 from app.video.probe import probe_video
+from app.video.audio_enhance import enhancement_filters
+from app.video.color_profiles import custom_rgb_filters
 from app.ai.gemini_client import compute_word_timings
 
 logger = logging.getLogger(__name__)
+
+# One visible, smooth default that matches the Studio preview.
+HOOK_FADE_DURATION = 0.60
+MAX_SONG_WINDOW_SCALE = 1.40
+MAX_SONG_WINDOW_INSET = 180
+USERNAME_SCENE_BLEND_STRENGTH = 0.70
+
+
+def _music_audio_filter(input_index: int, music: Dict[str, Any], duration: float,
+                        original_audio: Optional[str] = None) -> str:
+    """Play the chosen soundtrack interval on the reel's zero-based clock."""
+    selected_duration = float(music["end"]) - float(music["start"])
+    filters = [
+        "aresample=44100", "aformat=channel_layouts=stereo",
+        f"atrim=duration={selected_duration:.6f}", "asetpts=PTS-STARTPTS",
+    ]
+    if music.get("loop") and selected_duration < duration:
+        # Loop the selected samples, never the entire imported song.
+        filters.append(f"aloop=loop=-1:size={max(1, round(selected_duration * 44100))}")
+    filters.extend([
+        f"apad=whole_dur={duration:.6f}", f"atrim=duration={duration:.6f}",
+        f"volume={float(music.get('volume', 1)):.6f}",
+    ])
+    audible_duration = duration if music.get("loop") else min(selected_duration, duration)
+    for kind in ("in", "out"):
+        fade = min(max(0.0, float(music.get(f"fade_{kind}", 0))), audible_duration / 2)
+        if fade > 0:
+            start = 0 if kind == "in" else max(0, audible_duration - fade)
+            filters.append(f"afade=t={kind}:st={start:.6f}:d={fade:.6f}")
+    chain = f"[{input_index}:a]{','.join(filters)}[a_music]"
+    if original_audio is None:
+        return chain + ";[a_music]alimiter=limit=0.95:level=0:latency=1[a_mix]"
+    return (
+        chain + f";{original_audio}volume={float(music.get('original_volume', 0)):.6f},"
+        f"apad=whole_dur={duration:.6f},atrim=duration={duration:.6f}[a_original];"
+        "[a_original][a_music]amix=inputs=2:duration=longest:normalize=0,"
+        "alimiter=limit=0.95:level=0:latency=1[a_mix]"
+    )
 
 
 def _cover_scale(src_w: int, src_h: int, target_w: int, target_h: int, zoom: float = 1.0) -> tuple:
@@ -37,18 +82,227 @@ def _cover_scale(src_w: int, src_h: int, target_w: int, target_h: int, zoom: flo
     return (w, h)
 
 
+def _contain_geometry(src_w: int, src_h: int, canvas_w: int = 1080,
+                      canvas_h: int = 1920, scale: float = 1.0,
+                      vertical_offset: float = 0) -> tuple:
+    """Fit the full source using Studio's logical coordinates before export scaling."""
+    aspect = max(1, src_w) / max(1, src_h)
+    factor = canvas_w / 1080.0
+    logical_h = canvas_h / factor
+    fit_width = min(1080, logical_h * aspect)
+    width = max(2, math.floor(fit_width * scale / 2 + 0.5) * 2)
+    height = max(2, math.floor(fit_width / aspect * scale / 2 + 0.5) * 2)
+    width, height = round(width * factor), round(height * factor)
+    return (width, height, (canvas_w - width) / 2,
+            (canvas_h - height) / 2 + vertical_offset)
+
+
+def _validated_hide_regions(value: Any) -> list[dict[str, float]]:
+    """Validate canvas-normalized source cutouts before creating export files."""
+    if not isinstance(value, list) or len(value) > 12:
+        raise ValueError("Hide areas must be a list containing no more than 12 rectangles.")
+    regions = []
+    for index, region in enumerate(value):
+        if not isinstance(region, dict):
+            raise ValueError(f"Hide area {index + 1} must contain x, y, width and height.")
+        numbers = {}
+        for key in ("x", "y", "width", "height"):
+            number = region.get(key)
+            if isinstance(number, bool) or not isinstance(number, (int, float)) or not math.isfinite(number):
+                raise ValueError(f"Hide area {index + 1}: {key} must be a finite number.")
+            numbers[key] = float(number)
+        x, y, width, height = (numbers[key] for key in ("x", "y", "width", "height"))
+        if not (0 <= x < 1 and 0 <= y < 1 and 0 < width <= 1 and 0 < height <= 1):
+            raise ValueError(f"Hide area {index + 1} must be within the canvas and have positive width and height.")
+        # A rectangle dragged to the edge may extend beyond it; retain its
+        # visible intersection, never modify the saved project object.
+        regions.append({"x": x, "y": y, "width": min(width, 1 - x), "height": min(height, 1 - y)})
+    return regions
+
+
+def _visible_rounded_mask(frame_w: int, frame_h: int, frame_x: int, frame_y: int,
+                          canvas_w: int, canvas_h: int, radius: int, inset: int = 0,
+                          circular: bool = False, hide_regions: Optional[list] = None) -> Image.Image:
+    """Mask the visible frame and cut source-only holes in canvas coordinates."""
+    mask = Image.new("RGBA", (frame_w, frame_h), (0, 0, 0, 0))
+    safe_inset = max(0, min(inset, min(canvas_w, canvas_h) // 2 - 1))
+    left = max(safe_inset, frame_x)
+    top = max(safe_inset, frame_y)
+    right = min(canvas_w - safe_inset, frame_x + frame_w)
+    bottom = min(canvas_h - safe_inset, frame_y + frame_h)
+    visible_w = right - left
+    visible_h = bottom - top
+    if visible_w <= 0 or visible_h <= 0:
+        return mask
+    local_left = left - frame_x
+    local_top = top - frame_y
+    draw = ImageDraw.Draw(mask)
+    bounds = [local_left, local_top, local_left + visible_w, local_top + visible_h]
+    if circular:
+        draw.ellipse(bounds, fill=(255, 255, 255, 255))
+    else:
+        effective_radius = max(0, min(radius, visible_w // 2, visible_h // 2))
+        draw.rounded_rectangle(bounds, radius=effective_radius, fill=(255, 255, 255, 255))
+    for region in hide_regions or []:
+        cut_left = max(0, math.floor(region["x"] * canvas_w - frame_x))
+        cut_top = max(0, math.floor(region["y"] * canvas_h - frame_y))
+        cut_right = min(frame_w, math.ceil((region["x"] + region["width"]) * canvas_w - frame_x))
+        cut_bottom = min(frame_h, math.ceil((region["y"] + region["height"]) * canvas_h - frame_y))
+        if cut_right > cut_left and cut_bottom > cut_top:
+            mask.paste((0, 0, 0, 0), (cut_left, cut_top, cut_right, cut_bottom))
+    return mask
+
+
+def _scale_reel_layout(value: Any, factor: float) -> Any:
+    """Scale saved 1080-wide Studio coordinates for a higher-resolution render."""
+    if factor == 1.0:
+        return copy.deepcopy(value)
+    if isinstance(value, dict):
+        return {
+            key: (round(float(item) * factor) if key in {"x", "y", "size", "vertical_offset", "corner_radius"}
+                  and isinstance(item, (int, float)) else _scale_reel_layout(item, factor))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_scale_reel_layout(item, factor) for item in value]
+    return copy.deepcopy(value)
+
+
+def _decode_studio_png(encoded: Any, canvas_width: int, canvas_height: int, label: str) -> Image.Image:
+    """Decode a strictly sized Studio PNG data URL for a renderer overlay."""
+    prefix = "data:image/png;base64,"
+    if not isinstance(encoded, str) or not encoded.startswith(prefix):
+        raise ValueError(f"{label} must be a PNG image. Refresh Studio and export again.")
+    if len(encoded) > 8 * 1024 * 1024:
+        raise ValueError(f"{label} exceeds the 8 MB limit. Reduce text and export again.")
+    try:
+        raw = base64.b64decode(encoded[len(prefix):], validate=True)
+        with Image.open(io.BytesIO(raw)) as supplied:
+            if supplied.format != "PNG" or supplied.size != (canvas_width, canvas_height):
+                raise ValueError(f"{label} dimensions or format do not match the export. Refresh Studio and export again.")
+            supplied.load()
+            return supplied.convert("RGBA")
+    except (binascii.Error, OSError, Image.DecompressionBombError) as exc:
+        raise ValueError(f"{label} could not be read. Refresh Studio and export again.") from exc
+
+
+_WATERMARK_FONT_FILES = {
+    "bahnschrift": ("bahnschrift.ttf", "arialbd.ttf"),
+    "arial_black": ("ariblk.ttf", "arialbd.ttf"),
+    "segoe": ("segoeui.ttf", "arial.ttf"),
+    "twcen_condensed": ("TCCEB.TTF", "arialnb.ttf", "arialbd.ttf"),
+    "cooper_black": ("COOPBL.TTF", "ariblk.ttf", "arialbd.ttf"),
+    "oswald": ("Oswald.ttf", "arialnb.ttf", "arialbd.ttf"),
+    "georgia": ("georgia.ttf", "times.ttf"),
+    "segoe_print": ("segoepr.ttf", "segoeui.ttf", "arial.ttf"),
+}
+
+
+def watermark_font_path(font_key: str) -> Optional[Path]:
+    """Resolve only a known username font, never a caller-supplied file path."""
+    if font_key not in _WATERMARK_FONT_FILES:
+        return None
+    if font_key == "oswald":
+        return Path(__file__).resolve().parent.parent / "static" / "fonts" / "Oswald.ttf"
+    return Path(os.environ.get("WINDIR", "C:\\Windows")) / "Fonts" / _WATERMARK_FONT_FILES[font_key][0]
+
+
+def _watermark_font(font_key: Any, size: int) -> ImageFont.FreeTypeFont:
+    """Use the same installed family and weight as the Studio username picker."""
+    key = font_key if isinstance(font_key, str) and font_key in _WATERMARK_FONT_FILES else "bahnschrift"
+    fonts_dir = Path(os.environ.get("WINDIR", "C:\\Windows")) / "Fonts"
+    candidates = [watermark_font_path(key)]
+    candidates.extend(fonts_dir / name for name in _WATERMARK_FONT_FILES[key][1:])
+    candidates.append("DejaVuSerif.ttf" if key == "georgia" else (
+        "DejaVuSans.ttf" if key in {"segoe", "segoe_print"} else "DejaVuSans-Bold.ttf"
+    ))
+    for candidate in candidates:
+        try:
+            font = ImageFont.truetype(str(candidate), max(1, int(size)))
+        except OSError:
+            continue
+        variable_weight = {"bahnschrift": 800, "oswald": 600}.get(key)
+        if variable_weight and Path(candidate).name.lower() == _WATERMARK_FONT_FILES[key][0].lower():
+            # Match the browser's requested variable weight within the face's
+            # supported range (Bahnschrift clamps 800 to its maximum of 700).
+            axes = font.get_variation_axes()
+            font.set_variation_by_axes([
+                min(axis["maximum"], max(axis["minimum"], variable_weight))
+                if axis["name"] == b"Weight" else axis["default"]
+                for axis in axes
+            ])
+        return font
+    logger.warning("Username font %r and its fallback fonts could not be loaded", key)
+    return ImageFont.load_default(size=max(1, int(size)))
+
+
+def _scene_username_mask(width: int, height: int, watermark: Dict[str, Any]) -> Image.Image:
+    """White glyph coverage; scene colors are blended per frame, never baked into PNG."""
+    mask = Image.new("L", (width, height), 0)
+    size = max(1, int(watermark.get("size", 28)))
+    font = _watermark_font(watermark.get("font"), size)
+    text = str(watermark.get("text", "")).strip().upper()
+    x = float(watermark.get("x") if watermark.get("x") is not None else 35)
+    y = float(watermark.get("y") if watermark.get("y") is not None else 45)
+    draw = ImageDraw.Draw(mask)
+    if watermark.get("rotation", 0) == 90:
+        # Draw around the origin of a small tile, then rotate clockwise about (x,y).
+        bounds = draw.textbbox((0, 0), text, font=font, anchor="lm")
+        glyph = Image.new("L", (max(1, bounds[2] - bounds[0]), max(1, bounds[3] - bounds[1])), 0)
+        ImageDraw.Draw(glyph).text((-bounds[0], -bounds[1]), text, font=font, fill=255, anchor="lm")
+        glyph = glyph.transpose(Image.Transpose.ROTATE_270)
+        mask.paste(glyph, (round(x - bounds[3]), round(y + bounds[0])))
+    else:
+        draw.text((x, y), text, font=font, fill=255, anchor="lm")
+    return mask
+
+
+def _scene_username_filter(stage: str, mask_input: int) -> str:
+    """Match Canvas white overlay at the shared username blend strength."""
+    return (
+        f"{stage}format=gbrp,split=2[wm_base][wm_bright_in];"
+        "[wm_bright_in]lutrgb=r='min(255,val*2)':g='min(255,val*2)':b='min(255,val*2)'[wm_bright];"
+        f"[{mask_input}:v]format=gray,lut=y='val*{USERNAME_SCENE_BLEND_STRENGTH:.2f}',format=gbrp[wm_mask];"
+        "[wm_base][wm_bright][wm_mask]maskedmerge[wm_scene]"
+    )
+
+
+def _scene_hook_filter(stage: str, mask_stream: str) -> str:
+    """A readable frame-aware hook with 80% scene-blend strength."""
+    return (
+        f"{stage}format=gbrp,split=2[hook_scene_base][hook_scene_bright_in];"
+        "[hook_scene_bright_in]lutrgb=r='min(255,val*4+64)':g='min(255,val*4+64)':b='min(255,val*4+64)'[hook_scene_bright];"
+        f"{mask_stream}format=rgba,alphaextract,lut=y='val*0.80',format=gbrp[hook_scene_mask];"
+        "[hook_scene_base][hook_scene_bright][hook_scene_mask]maskedmerge[hook_scene]"
+    )
+
+
 # --- GPU acceleration detection (cached) ---
 _gpu_cache: Dict[str, Optional[bool]] = {}
 
 def _has_nvenc() -> bool:
-    """Check if h264_nvenc encoder is available."""
+    """Return true only when the NVIDIA encoder can complete a real encode."""
     if "nvenc" not in _gpu_cache:
         try:
-            r = subprocess.run(
+            available = subprocess.run(
                 ["ffmpeg", "-hide_banner", "-encoders"],
                 capture_output=True, text=True, timeout=5
             )
-            _gpu_cache["nvenc"] = "h264_nvenc" in r.stdout
+            if "h264_nvenc" not in available.stdout:
+                _gpu_cache["nvenc"] = False
+            else:
+                # FFmpeg can be compiled with NVENC even when the installed
+                # driver cannot use it. Verify the actual GPU once, then cache
+                # the result so a failed encoder never wastes a full 4K render.
+                smoke_test = subprocess.run(
+                    [
+                        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                        "-f", "lavfi", "-i", "color=c=black:s=1920x1080:r=30:d=0.1",
+                        "-frames:v", "1", "-c:v", "h264_nvenc", "-f", "null", "-",
+                    ],
+                    capture_output=True, text=True, timeout=15,
+                )
+                _gpu_cache["nvenc"] = smoke_test.returncode == 0
         except Exception:
             _gpu_cache["nvenc"] = False
     return _gpu_cache["nvenc"]
@@ -103,6 +357,11 @@ class ReelRenderer:
         """Generates a high-res RGBA transparent image containing styled typography and badges."""
         img = Image.new("RGBA", (canvas_width, canvas_height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
+        studio_text = None
+        if "studio_text_overlay" in template:
+            studio_text = _decode_studio_png(
+                template["studio_text_overlay"], canvas_width, canvas_height, "Studio text overlay"
+            )
 
         # Helper to load system font or fallback
         def get_font(font_name: str, size: int, has_emoji: bool = False):
@@ -119,8 +378,8 @@ class ReelRenderer:
                 else:
                     font_candidates.extend([fonts_dir / "arial.ttf", fonts_dir / "arialbd.ttf"])
             elif "segoe" in clean:
-                if "bold" in clean or "black" in clean:
-                    font_candidates.extend([fonts_dir / "segoeuib.ttf", fonts_dir / "seguisb.ttf"])
+                if "bold" in clean or "black" in clean or "semibold" in clean:
+                    font_candidates.extend([fonts_dir / "seguisb.ttf", fonts_dir / "segoeuib.ttf", fonts_dir / "segoeui.ttf"])
                 else:
                     font_candidates.extend([fonts_dir / "segoeui.ttf"])
             elif "bold" in clean or "black" in clean:
@@ -156,7 +415,7 @@ class ReelRenderer:
             # -------------------------------------------------------------
             # 1. SERIES TEXT (Top-Left Broadcast Badge)
             s_cfg = template.get("series_text", {})
-            if s_cfg.get("enabled", True) and series_text.strip():
+            if studio_text is None and s_cfg.get("enabled", True) and series_text.strip():
                 s_font_name = s_cfg.get("font", "Arial-Bold").split("-")[0].lower()
                 s_font = get_font(s_font_name, 22)
                 badge_text = series_text.replace("\n", " · ").upper()
@@ -190,16 +449,58 @@ class ReelRenderer:
             # -------------------------------------------------------------
             # 9:16 VERTICAL / PORTRAIT OVERLAY
             # -------------------------------------------------------------
+            design_scale = canvas_width / 1080.0
             # 1. SERIES TEXT / VIRAL HOOK (Top)
             s_cfg = template.get("series_text", {})
-            if s_cfg.get("enabled", True) and series_text.strip():
-                s_font_name = s_cfg.get("font", "Arial-Bold").split("-")[0].lower()
-                s_size = int(s_cfg.get("size", 34))
+            if studio_text is None and s_cfg.get("enabled", True) and series_text.strip():
+                # Match the popular anime-edit hook style: bold white text
+                # with a clean black outline directly over the footage.
+                s_font_name = s_cfg.get("font", "Segoe UI Semibold").lower()
+                requested_size = int(s_cfg.get("size", 38))
+                line_gap = max(0, int(s_cfg.get("line_gap", 12)))
                 s_has_emoji = any(c in '⚡🔥✨🌙' or ord(c) >= 0x1F000 for c in series_text)
-                s_font = get_font(s_font_name, s_size, has_emoji=s_has_emoji)
-                
-                text_lines = series_text.upper().split("\n")
-                line_height = s_size * 1.3
+                # Newlines in the Studio textarea are deliberate hook lines.
+                # Preserve them for browser-less/native overlay exports too.
+                hook_paragraphs = [line.strip() for line in series_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+                has_manual_line_break = len(hook_paragraphs) > 1
+                hook_text = "\n".join(hook_paragraphs).strip()
+                max_hook_width = min(round(920 * design_scale), canvas_width - round(120 * design_scale))
+                text_lines = []
+                s_font = None
+                max_hook_size = round((110 if s_cfg.get("_custom") else 42) * design_scale)
+                min_hook_size = round(18 * design_scale)
+                s_size = min(max_hook_size, max(min_hook_size, requested_size))
+                for candidate_size in range(s_size, max(12, round(13 * design_scale)) - 1, -1):
+                    candidate_font = get_font(s_font_name, candidate_size, has_emoji=s_has_emoji)
+                    candidate_lines = []
+                    for paragraph in hook_paragraphs:
+                        words = paragraph.split() if paragraph else []
+                        if not words:
+                            candidate_lines.append("")
+                            continue
+                        line = ""
+                        for word in words:
+                            proposed = f"{line} {word}".strip()
+                            if not line or draw.textlength(proposed, font=candidate_font) <= max_hook_width:
+                                line = proposed
+                            else:
+                                candidate_lines.append(line)
+                                line = word
+                        if line:
+                            candidate_lines.append(line)
+                    if len(candidate_lines) <= max(3, len(hook_paragraphs)):
+                        text_lines = candidate_lines
+                        s_font = candidate_font
+                        s_size = candidate_size
+                        break
+                if s_font is None:
+                    # Keep even an unusually long custom hook visible rather
+                    # than silently dropping words.
+                    s_font = get_font(s_font_name, min_hook_size, has_emoji=s_has_emoji)
+                    s_size = min_hook_size
+                    text_lines = hook_paragraphs
+
+                line_height = round(s_size * 1.22) + line_gap
                 total_h = len(text_lines) * line_height
 
                 if "y" in s_cfg and s_cfg["y"] is not None:
@@ -209,25 +510,32 @@ class ReelRenderer:
                     start_y = int(canvas_height * s_y_percent - total_h / 2)
                 
                 custom_x = s_cfg.get("x")
+                # A creator-entered second line is a single left-aligned hook
+                # block. Automatic wrapping continues to centre each line.
+                manual_block_width = max(
+                    (draw.textbbox((0, 0), line, font=s_font)[2] - draw.textbbox((0, 0), line, font=s_font)[0]
+                     for line in text_lines),
+                    default=0,
+                )
+                manual_block_x = int((custom_x if custom_x is not None else canvas_width / 2) - manual_block_width / 2)
                 
                 for i, line in enumerate(text_lines):
                     bbox = draw.textbbox((0, 0), line, font=s_font)
                     w = bbox[2] - bbox[0]
-                    if custom_x is not None:
+                    if has_manual_line_break:
+                        x = manual_block_x
+                    elif custom_x is not None:
                         x = int(custom_x - w // 2)
                     else:
                         x = (canvas_width - w) // 2
                     y = int(start_y + i * line_height)
                     if bg_type == "white":
-                        s_color = s_cfg.get("color") if (s_cfg.get("color") and is_dark_hex(s_cfg.get("color"))) else "#0284c7"
-                        line_color = s_color if i == 0 else "#0f172a"
+                        line_color = s_cfg.get("color") if (s_cfg.get("color") and is_dark_hex(s_cfg.get("color"))) else "#0f172a"
                     else:
-                        s_color = s_cfg.get("color") if (s_cfg.get("color") and not is_dark_hex(s_cfg.get("color"))) else "#38bdf8"
-                        line_color = s_color if i == 0 else "#ffffff"
-                    # Shadow
-                    if bg_type != "white":
-                        draw.text((x + 2, y + 2), line, font=s_font, fill=(0, 0, 0, 180))
-                    draw.text((x, y), line, font=s_font, fill=line_color)
+                        line_color = s_cfg.get("color") if (s_cfg.get("color") and not is_dark_hex(s_cfg.get("color"))) else "#ffffff"
+                    outline_width = max(2, round(s_size * 0.11))
+                    draw.text((x, y), line, font=s_font, fill=line_color,
+                              stroke_width=outline_width, stroke_fill="#080808")
 
             # 2. SONG TITLE (Below Video - Multiline support)
             t_cfg = template.get("song_title", {})
@@ -319,30 +627,28 @@ class ReelRenderer:
         vid_cfg = template.get("video", {})
         curved_border = vid_cfg.get("curved_border", True)
         c_radius = int(vid_cfg.get("corner_radius", 16)) if curved_border else 0
-        v_offset = vid_cfg.get("vertical_offset", 0 if is_landscape else -40)
+        v_offset = vid_cfg.get("vertical_offset", 0)
         fg_scale = vid_cfg.get("scale", 1.0)
 
         fg_x, fg_y = 0, 0
         if not is_landscape or fg_scale < 0.999:
-            fg_w = int(canvas_width * fg_scale * (0.95 if canvas_width == canvas_height else 1.0))
             vid_w = vid_cfg.get("video_width") or 16
             vid_h = vid_cfg.get("video_height") or 9
-            fg_h = int(round(fg_w * vid_h / vid_w))
-            if fg_h % 2 != 0: fg_h += 1
-            if fg_w % 2 != 0: fg_w += 1
-            fg_x = (canvas_width - fg_w) // 2
-            fg_y = (canvas_height - fg_h) // 2 + v_offset
-            b_col = (0, 0, 0, 38) if bg_type == "white" else (255, 255, 255, 75)
-            if c_radius > 0:
-                eff_rad = min(c_radius, fg_w // 2, fg_h // 2)
-                draw.rounded_rectangle([fg_x, fg_y, fg_x + fg_w, fg_y + fg_h], radius=eff_rad, outline=b_col, width=2)
+            if canvas_height > canvas_width:
+                fg_w, fg_h, fg_x, fg_y = _contain_geometry(
+                    vid_w, vid_h, canvas_width, canvas_height, fg_scale, v_offset)
             else:
-                draw.rectangle([fg_x, fg_y, fg_x + fg_w, fg_y + fg_h], outline=b_col, width=2)
+                fg_w = int(canvas_width * fg_scale * (0.95 if canvas_width == canvas_height else 1.0))
+                fg_h = int(round(fg_w * vid_h / vid_w))
+                if fg_h % 2 != 0: fg_h += 1
+                if fg_w % 2 != 0: fg_w += 1
+                fg_x = (canvas_width - fg_w) // 2
+                fg_y = (canvas_height - fg_h) // 2 + v_offset
         else:
             fg_x = 48
             fg_y = 36
 
-        # 4. USERNAME WATERMARK (Clean text watermark)
+        # 4. USERNAME WATERMARK (optional clean creator mark)
         if isinstance(watermark, dict):
             wm_cfg = watermark
         elif watermark is True:
@@ -350,10 +656,10 @@ class ReelRenderer:
         else:
             wm_cfg = template.get("watermark", {}) or {}
 
-        if wm_cfg and wm_cfg.get("enabled", False) and wm_cfg.get("text", "").strip():
+        if studio_text is None and wm_cfg and wm_cfg.get("style") != "scene_blend" and wm_cfg.get("enabled", False) and wm_cfg.get("text", "").strip():
             wm_text = wm_cfg.get("text", "").strip()
             wm_size = int(wm_cfg.get("size", 28))
-            wm_font = get_font("arial-bold", wm_size)
+            wm_font = _watermark_font(wm_cfg.get("font"), wm_size)
             if bg_type == "white":
                 wm_color = wm_cfg.get("color") if (wm_cfg.get("color") and is_dark_hex(wm_cfg.get("color"))) else "#0f172a"
             else:
@@ -362,11 +668,25 @@ class ReelRenderer:
             default_wm_y = fg_y + 45 if not is_landscape else 50
             wm_x = int(wm_cfg["x"]) if ("x" in wm_cfg and wm_cfg["x"] is not None) else default_wm_x
             wm_y = int(wm_cfg["y"]) if ("y" in wm_cfg and wm_cfg["y"] is not None) else default_wm_y
-            if bg_type != "white":
-                draw.text((wm_x + 1, wm_y + 2), wm_text, font=wm_font, fill=(0, 0, 0, 180))
+            if bg_type == "white":
+                shadow_color = (255, 255, 255, 150)
+                shadow_offset = (1, 1)
+            else:
+                shadow_color = (0, 0, 0, 210)
+                shadow_offset = (1, 2)
+            draw.text(
+                (wm_x + shadow_offset[0], wm_y + shadow_offset[1]),
+                wm_text,
+                font=wm_font,
+                fill=shadow_color,
+            )
             draw.text((wm_x, wm_y), wm_text, font=wm_font, fill=wm_color)
 
-        # 4b. CREATOR PROFILE HEADER (avatar above display name, handle, and follow CTA)
+        if studio_text is not None:
+            # Preserve browser glyphs, antialiasing and translucent shadow edges.
+            img.alpha_composite(studio_text)
+
+        # 4b. CREATOR PROFILE HEADER (reference-style avatar left, name and handle right)
         if isinstance(creator_badge, dict):
             cb_cfg = creator_badge
         else:
@@ -405,18 +725,19 @@ class ReelRenderer:
             display_font = get_font("arial-bold", display_size)
             display_bbox = draw.textbbox((0, 0), display_name, font=display_font)
             display_w = display_bbox[2] - display_bbox[0]
-            follow_text = "Follow for more"
             handle_size = max(13, round(badge_size * 0.48))
             handle_font = get_font("arial-bold", handle_size)
-            handle_line = f"{badge_text}  •  {follow_text}"
+            handle_line = badge_text
             handle_bbox = draw.textbbox((0, 0), handle_line, font=handle_font)
             handle_w = handle_bbox[2] - handle_bbox[0]
-            total_w = max(avatar_d, display_w, handle_w)
-            total_h = avatar_d + spacing + display_size + max(3, round(badge_size * 0.12)) + handle_size
+            text_gap = max(3, round(badge_size * 0.12))
+            text_w = max(display_w, handle_w)
+            total_w = avatar_d + spacing + text_w
+            total_h = max(avatar_d, display_size + text_gap + handle_size)
             top_y = cb_y - total_h // 2
 
-            # 1. Composite the circular Laplace avatar at the top.
-            av_x = cb_x - avatar_d // 2
+            # 1. Composite the unchanged circular Laplace avatar on the left.
+            av_x = cb_x - total_w // 2
             av_y = top_y
             if avatar_path:
                 try:
@@ -431,19 +752,17 @@ class ReelRenderer:
                 except Exception:
                     pass
 
-            # 2. Draw the display name and handle beneath the avatar.
-            name_y = av_y + avatar_d + spacing
-            handle_y = name_y + display_size + max(3, round(badge_size * 0.12))
-            name_bbox = draw.textbbox((0, 0), display_name, font=display_font)
-            handle_bbox = draw.textbbox((0, 0), handle_line, font=handle_font)
-            name_x = cb_x - (name_bbox[2] - name_bbox[0]) // 2
-            handle_x = cb_x - (handle_bbox[2] - handle_bbox[0]) // 2
+            # 2. Place the name and handle beside the photo, matching the profile reference.
+            text_x = av_x + avatar_d + spacing
+            text_top = top_y + (avatar_d - display_size - text_gap - handle_size) // 2
+            name_y = text_top
+            handle_y = name_y + display_size + text_gap
             if bg_type != "white":
-                draw.text((name_x + 1, name_y + 2), display_name, font=display_font, fill=(0, 0, 0, 200))
-            draw.text((name_x, name_y), display_name, font=display_font, fill=badge_color)
+                draw.text((text_x + 1, name_y + 2), display_name, font=display_font, fill=(0, 0, 0, 200))
+            draw.text((text_x, name_y), display_name, font=display_font, fill=badge_color)
 
             follow_color = "#475569" if bg_type == "white" else "#dbeafe"
-            draw.text((handle_x, handle_y), handle_line, font=handle_font, fill=follow_color)
+            draw.text((text_x, handle_y), handle_line, font=handle_font, fill=follow_color)
 
         img.save(output_png_path, "PNG")
         return output_png_path
@@ -455,6 +774,7 @@ class ReelRenderer:
         clip_duration: float,
         output_ass_path: str,
         style_preset: str = "minimal",
+        subtitle_animation: str = "auto",
         aspect_ratio: str = "9:16",
         subtitle_color: Optional[str] = None,
         subtitle_color_en: Optional[str] = None,
@@ -462,13 +782,18 @@ class ReelRenderer:
         subtitle_language: str = "both",
         subtitle_y: Optional[int] = None,
         subtitle_font_size: Optional[float] = None,
-        subtitle_x: Optional[float] = None
+        subtitle_x: Optional[float] = None,
+        subtitle_font: str = "segoe"
     ) -> bool:
         """Generates an Advanced SubStation Alpha (ASS) dual-language subtitle file with chosen visual preset and aspect ratio."""
         if not lyrics:
             return False
 
         sub_lang = (subtitle_language or "both").lower()
+        animation_request = (subtitle_animation or "auto").lower()
+        if animation_request not in {"auto", "fade", "pop", "rise", "slide", "none"}:
+            animation_request = "auto"
+        subtitle_animation = "fade" if animation_request == "auto" else animation_request
 
         def hex_to_ass_color(hex_str: Optional[str], default: str = "") -> str:
             if not hex_str:
@@ -519,6 +844,7 @@ class ReelRenderer:
                 sub_col = hex_to_ass_color(subtitle_color, default="&H002A170F")
             outline_col = "&H00FFFFFF"
             shadow_col = "&H00000000"
+            en_col = hex_to_ass_color(subtitle_color_en, default=sub_col) if subtitle_color_en and is_dark_hex(subtitle_color_en) else sub_col
         else:
             if not subtitle_color or is_dark_hex(subtitle_color):
                 sub_col = "&H00FFFFFF"
@@ -526,31 +852,68 @@ class ReelRenderer:
                 sub_col = hex_to_ass_color(subtitle_color, default="&H00FFFFFF")
             outline_col = "&H00000000"
             shadow_col = "&H80000000"
+            en_col = hex_to_ass_color(subtitle_color_en, default=sub_col) if subtitle_color_en and not is_dark_hex(subtitle_color_en) else sub_col
 
         # Subtitle Presets (both Japanese & English subtitles always use the same color)
         if bg_type == "white":
-            if style_preset == "minimal":
+            if style_preset == "white_on_black":
+                jp_style = f"Style: Japanese,Yu Mincho,40,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0.5,0,3,10,0,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Georgia,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0.3,0,3,8,0,2,40,40,{en_v},1"
+            elif style_preset == "minimal":
                 jp_style = f"Style: Japanese,Yu Gothic,36,{sub_col},&H000000FF,{outline_col},{shadow_col},-1,0,0,0,100,100,0.5,0,1,0.8,0.0,2,40,40,{jp_v},1"
                 en_style = f"Style: English,Segoe UI,24,{sub_col},&H000000FF,{outline_col},{shadow_col},-1,0,0,0,100,100,0.3,0,1,0.6,0.0,2,40,40,{en_v},1"
             elif style_preset == "bold_lyrics":
                 jp_style = f"Style: Japanese,Yu Gothic,42,{sub_col},&H000000FF,{outline_col},{shadow_col},-1,0,0,0,100,100,0.8,0,1,1.8,0.0,2,40,40,{jp_v},1"
                 en_style = f"Style: English,Segoe UI,28,{sub_col},&H000000FF,{outline_col},{shadow_col},-1,0,0,0,100,100,0.5,0,1,1.4,0.0,2,40,40,{en_v},1"
-            elif style_preset in ("neon_glow", "retro_90s", "karaoke", "cinematic", "impact", "lofi_pastel"):
-                jp_style = f"Style: Japanese,Yu Gothic,39,{sub_col},&H000000FF,{outline_col},{shadow_col},-1,0,0,0,100,100,0.8,0,1,1.2,0.0,2,40,40,{jp_v},1"
-                en_style = f"Style: English,Segoe UI,26,{sub_col},&H000000FF,{outline_col},{shadow_col},-1,0,0,0,100,100,0.5,0,1,1.0,0.0,2,40,40,{en_v},1"
+            elif style_preset == "pop_bounce":
+                jp_style = f"Style: Japanese,Yu Gothic,44,{sub_col},&H000000FF,{outline_col},{shadow_col},-1,0,0,0,100,100,0.8,0,1,1.8,0.0,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Segoe UI,29,{sub_col},&H000000FF,{outline_col},{shadow_col},-1,0,0,0,100,100,0.5,0,1,1.4,0.0,2,40,40,{en_v},1"
+            elif style_preset == "neon_glow":
+                jp_style = f"Style: Japanese,Yu Gothic,42,&H00FFF000,&H000000FF,&H006B4A00,&H6000F0FF,-1,0,0,0,100,100,1.0,0,1,2.5,0.0,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Segoe UI,26,&H00FFF000,&H000000FF,&H006B4A00,&H6000F0FF,-1,0,0,0,100,100,0.5,0,1,1.8,0.0,2,40,40,{en_v},1"
+            elif style_preset == "retro_90s":
+                jp_style = f"Style: Japanese,Arial,40,&H0000DEFF,&H000000FF,&H002A170F,&H00000000,-1,0,0,0,100,100,0.5,0,1,2.5,1.0,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Arial,26,&H0000DEFF,&H000000FF,&H002A170F,&H00000000,-1,0,0,0,100,100,0.3,0,1,1.8,0.8,2,40,40,{en_v},1"
+            elif style_preset == "manga_flash":
+                manga_col = sub_col if custom_ass_color else "&H0000E6FF"
+                jp_style = f"Style: Japanese,Yu Gothic,44,{manga_col},&H000000FF,&H002A170F,&H00000000,-1,0,0,0,100,100,0.5,0,1,2.8,1.0,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Segoe UI,27,{manga_col},&H000000FF,&H002A170F,&H00000000,-1,0,0,0,100,100,0.3,0,1,2.0,0.8,2,40,40,{en_v},1"
+            elif style_preset == "karaoke":
+                jp_style = f"Style: Japanese,Yu Gothic,42,&H0000E6FF,&H00A0A0A0,&H002A170F,&H70000000,-1,0,0,0,100,100,0.8,0,1,2.5,1.0,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Segoe UI,26,&H0000E6FF,&H00A0A0A0,&H002A170F,&H70000000,-1,0,0,0,100,100,0.5,0,1,1.8,0.8,2,40,40,{en_v},1"
+            elif style_preset == "cinematic":
+                jp_style = f"Style: Japanese,Yu Gothic,36,{sub_col},&H000000FF,{outline_col},{shadow_col},0,1,0,0,100,100,3.0,0,1,0.5,0.0,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Segoe UI,22,{sub_col},&H000000FF,{outline_col},{shadow_col},0,1,0,0,100,100,2.0,0,1,0.3,0.0,2,40,40,{en_v},1"
+            elif style_preset == "impact":
+                jp_style = f"Style: Japanese,Yu Gothic,48,&H0000E6FF,&H000000FF,&H002A170F,&H00000000,-1,0,0,0,100,100,0.0,0,1,4.0,2.0,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Arial,32,&H0000E6FF,&H000000FF,&H002A170F,&H00000000,-1,0,0,0,100,100,0.0,0,1,3.0,1.5,2,40,40,{en_v},1"
+            elif style_preset == "lofi_pastel":
+                jp_style = f"Style: Japanese,Yu Gothic,36,&H00DCF5F5,&H000000FF,&H00000000,&H80261A3A,0,0,0,0,100,100,1.5,0,3,0.0,6.0,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Segoe UI,24,&H00FFB0E0,&H000000FF,&H00000000,&H80261A3A,0,0,0,0,100,100,1.0,0,3,0.0,5.0,2,40,40,{en_v},1"
+            elif style_preset == "jp_en":
+                jp_style = f"Style: Japanese,Yu Gothic,42,{sub_col},&H000000FF,&H002A170F,{shadow_col},-1,0,0,0,100,100,0.8,0,1,1.8,0.8,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Segoe UI,25,{en_col},&H000000FF,&H002A170F,{shadow_col},-1,0,0,0,100,100,0.5,0,1,1.2,0.6,2,40,40,{en_v},1"
             elif style_preset == "anime":
-                jp_style = f"Style: Japanese,Yu Gothic,39,{sub_col},&H000000FF,{outline_col},{shadow_col},-1,0,0,0,100,100,0.8,0,1,1.2,0.0,2,40,40,{jp_v},1"
-                en_style = f"Style: English,Segoe UI,26,{sub_col},&H000000FF,{outline_col},{shadow_col},-1,0,0,0,100,100,0.5,0,1,1.0,0.0,2,40,40,{en_v},1"
+                anime_jp_col = sub_col if custom_ass_color else "&H00D4A8F9"
+                anime_en_col = en_col if (subtitle_color_en or custom_ass_color) else "&H00FCD37D"
+                jp_style = f"Style: Japanese,Yu Gothic,40,{anime_jp_col},&H000000FF,&H00B672F4,&H709D4EDD,-1,0,0,0,100,100,0.8,0,1,2.0,1.0,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Segoe UI,26,{anime_en_col},&H000000FF,&H00B672F4,&H709D4EDD,-1,0,0,0,100,100,0.5,0,1,1.5,0.8,2,40,40,{en_v},1"
             else:
                 jp_style = f"Style: Japanese,Yu Gothic,38,{sub_col},&H000000FF,{outline_col},{shadow_col},-1,0,0,0,100,100,0.8,0,1,1.2,0.0,2,40,40,{jp_v},1"
                 en_style = f"Style: English,Segoe UI,26,{sub_col},&H000000FF,{outline_col},{shadow_col},-1,0,0,0,100,100,0.5,0,1,1.0,0.0,2,40,40,{en_v},1"
         else:
-            if style_preset == "minimal":
+            if style_preset == "white_on_black":
+                jp_style = f"Style: Japanese,Yu Mincho,40,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0.5,0,3,10,0,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Georgia,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0.3,0,3,8,0,2,40,40,{en_v},1"
+            elif style_preset == "minimal":
                 jp_style = f"Style: Japanese,Yu Gothic,36,{sub_col},&H000000FF,&H00000000,&H90000000,-1,0,0,0,100,100,0.5,0,1,1.0,2.5,2,40,40,{jp_v},1"
                 en_style = f"Style: English,Segoe UI,24,{sub_col},&H000000FF,&H00000000,&H90000000,-1,0,0,0,100,100,0.3,0,1,0.8,2.0,2,40,40,{en_v},1"
             elif style_preset == "bold_lyrics":
                 jp_style = f"Style: Japanese,Yu Gothic,42,{sub_col},&H000000FF,&H00000000,&H90000000,-1,0,0,0,100,100,0.8,0,1,5.5,2.0,2,40,40,{jp_v},1"
                 en_style = f"Style: English,Segoe UI,28,{sub_col},&H000000FF,&H00000000,&H90000000,-1,0,0,0,100,100,0.5,0,1,4.5,2.0,2,40,40,{en_v},1"
+            elif style_preset == "pop_bounce":
+                jp_style = f"Style: Japanese,Yu Gothic,44,{sub_col},&H000000FF,&H00000000,&H90000000,-1,0,0,0,100,100,0.8,0,1,5.8,2.2,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Segoe UI,29,{sub_col},&H000000FF,&H00000000,&H90000000,-1,0,0,0,100,100,0.5,0,1,4.8,2.0,2,40,40,{en_v},1"
             elif style_preset == "neon_glow":
                 neon_col = "&H00FFF000" if not custom_ass_color else sub_col
                 jp_style = f"Style: Japanese,Yu Gothic,42,{neon_col},&H000000FF,&H001F1A00,&H70FFF000,-1,0,0,0,100,100,1.0,0,1,3.0,0.0,2,40,40,{jp_v},1"
@@ -559,6 +922,10 @@ class ReelRenderer:
                 retro_col = "&H0000DEFF" if not custom_ass_color else sub_col
                 jp_style = f"Style: Japanese,Arial,40,{retro_col},&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0.5,0,1,3.5,1.5,2,40,40,{jp_v},1"
                 en_style = f"Style: English,Arial,26,{retro_col},&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0.3,0,1,2.5,1.0,2,40,40,{en_v},1"
+            elif style_preset == "manga_flash":
+                manga_col = "&H0000E6FF" if not custom_ass_color else sub_col
+                jp_style = f"Style: Japanese,Yu Gothic,44,{manga_col},&H000000FF,&H00000000,&H90000000,-1,0,0,0,100,100,0.5,0,1,6.2,2.4,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Segoe UI,27,{manga_col},&H000000FF,&H00000000,&H90000000,-1,0,0,0,100,100,0.3,0,1,4.8,1.8,2,40,40,{en_v},1"
             elif style_preset == "karaoke":
                 karaoke_unsung = "&H00A0A0A0"
                 karaoke_sung = "&H0000E6FF" if not custom_ass_color else sub_col
@@ -576,22 +943,48 @@ class ReelRenderer:
                 jp_style = f"Style: Japanese,Yu Gothic,36,{lofi_col},&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,1.5,0,3,0.0,8.0,2,40,40,{jp_v},1"
                 en_style = f"Style: English,Segoe UI,24,&H00FFB0E0,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,1.0,0,3,0.0,6.0,2,40,40,{en_v},1"
             elif style_preset == "anime":
-                outline_anime = "&H00000000" if custom_ass_color else "&H00B672F4"
-                jp_style = f"Style: Japanese,Yu Gothic,39,{sub_col},&H000000FF,{outline_anime},&H90000000,-1,0,0,0,100,100,0.8,0,1,4.0,3.0,2,40,40,{jp_v},1"
-                en_style = f"Style: English,Segoe UI,26,{sub_col},&H000000FF,&H00000000,&H90000000,-1,0,0,0,100,100,0.5,0,1,3.0,1.5,2,40,40,{en_v},1"
+                anime_jp_col = sub_col if custom_ass_color else "&H00D4A8F9"
+                anime_en_col = en_col if (subtitle_color_en or custom_ass_color) else "&H00FCD37D"
+                jp_style = f"Style: Japanese,Yu Gothic,39,{anime_jp_col},&H000000FF,&H00B672F4,&H709D4EDD,-1,0,0,0,100,100,0.8,0,1,4.0,3.0,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Segoe UI,26,{anime_en_col},&H000000FF,&H00B672F4,&H709D4EDD,-1,0,0,0,100,100,0.5,0,1,3.0,1.5,2,40,40,{en_v},1"
+            elif style_preset == "jp_en":
+                jp_style = f"Style: Japanese,Yu Gothic,42,{sub_col},&H000000FF,&H00000000,&H90000000,-1,0,0,0,100,100,0.8,0,1,5.0,2.2,2,40,40,{jp_v},1"
+                en_style = f"Style: English,Segoe UI,25,{en_col},&H000000FF,&H00000000,&H90000000,-1,0,0,0,100,100,0.5,0,1,3.2,1.4,2,40,40,{en_v},1"
             else:
                 jp_style = f"Style: Japanese,Yu Gothic,38,{sub_col},&H000000FF,&H00000000,&H90000000,-1,0,0,0,100,100,0.8,0,1,4.5,2.0,2,40,40,{jp_v},1"
                 en_style = f"Style: English,Segoe UI,26,{sub_col},&H000000FF,&H00000000,&H90000000,-1,0,0,0,100,100,0.5,0,1,3.0,1.5,2,40,40,{en_v},1"
 
+        english_font = {
+            "impact": "Impact",
+            "arial_black": "Arial Black",
+            "bahnschrift": "Bahnschrift",
+            "segoe": "Segoe UI",
+            "franklin_heavy": "Franklin Gothic Heavy",
+            "oswald": "Oswald",
+            "cooper_black": "Cooper Black",
+            "twcen_condensed": "Tw Cen MT Condensed Extra Bold",
+            "verdana": "Verdana",
+            "georgia": "Georgia",
+            "segoe_print": "Segoe Print",
+        }.get((subtitle_font or "segoe").lower(), "Segoe UI")
+        if style_preset == "white_on_black":
+            # This preset is the classic serif reference look, not the creator's
+            # general subtitle font choice.
+            english_font = "Georgia"
+        en_fields = en_style.split(",")
+        en_fields[1] = english_font
+        en_style = ",".join(en_fields)
+
         font_scale = max(0.1, min(10.0, float(subtitle_font_size) / 38.0)) if subtitle_font_size is not None else 1.0
-        if font_scale != 1.0:
-            def scale_style(style: str) -> str:
+        english_subtitle_scale = 1.12
+        if font_scale != 1.0 or english_subtitle_scale != 1.0:
+            def scale_style(style: str, scale: float) -> str:
                 fields = style.split(",")
                 for index in (2, 12, 16, 17):
-                    fields[index] = f"{float(fields[index]) * font_scale:g}"
+                    fields[index] = f"{float(fields[index]) * scale:g}"
                 return ",".join(fields)
-            jp_style = scale_style(jp_style)
-            en_style = scale_style(en_style)
+            jp_style = scale_style(jp_style, font_scale)
+            en_style = scale_style(en_style, font_scale * english_subtitle_scale)
 
         ass_header = f"""[Script Info]
 Title: Anime Reel Dual Subtitles
@@ -612,8 +1005,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
         # Detect whether lyrics timestamps are already relative to the clip start (0.0 to clip_duration)
         # or absolute timeline timestamps matching the source video
-        is_already_relative = False
-        if clip_start > 2.0 and lyrics:
+        explicit_bases = {
+            str(line.get("timeline_basis", "")).strip().lower()
+            for line in lyrics
+            if str(line.get("timeline_basis", "")).strip().lower() in {"absolute", "relative"}
+        }
+        is_already_relative = explicit_bases == {"relative"}
+        if not explicit_bases and clip_start > 2.0 and lyrics:
             valid_starts = [float(l.get("start", 0)) for l in lyrics if l.get("start") is not None]
             valid_ends = [float(l.get("end", 0)) for l in lyrics if l.get("end") is not None]
             if valid_starts and max(valid_starts) < clip_start and valid_ends and max(valid_ends) <= (clip_duration + 5.0):
@@ -664,7 +1062,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 if "\n" in text:
                     return r"\N".join(part.strip() for part in text.split("\n") if part.strip())
                 has_japanese = any('\u3040' <= c <= '\u30ff' or '\u4e00' <= c <= '\u9fff' for c in text)
-                max_c = 22 if has_japanese else 42
+                # Prefer one readable Japanese line plus one English line.  The
+                # cue itself is scaled below if it still needs extra rows.
+                max_c = 34 if has_japanese else 68
                 if len(text) > max_c:
                     if not has_japanese or is_en:
                         words = text.split()
@@ -691,7 +1091,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     formatted_jp = ""
 
             en_lines_count = len(formatted_en.split(r"\N")) if formatted_en else 0
-            en_line_h = round((36 if aspect_ratio == "9:16" else 28) * font_scale)
+            jp_lines_count = len(formatted_jp.split(r"\N")) if formatted_jp else 0
+            layout_line_count = jp_lines_count + en_lines_count
+            compact_scale = max(0.72, 1 - (layout_line_count - 2) * 0.12) if layout_line_count > 2 else 1.0
+            compact_tag = "" if compact_scale == 1.0 else f"{{\\fscx{compact_scale * 100:g}\\fscy{compact_scale * 100:g}}}"
+            en_line_h = round((36 if aspect_ratio == "9:16" else 28) * font_scale * english_subtitle_scale)
 
             if formatted_jp and not formatted_en:
                 dyn_jp_v = (jp_v + en_v) // 2
@@ -703,11 +1107,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 dyn_jp_v = en_v + (en_lines_count * en_line_h) + round(16 * font_scale)
                 dyn_en_v = en_v
 
+            center_x = max(0, min(res_x, float(subtitle_x))) if subtitle_x is not None else res_x / 2
+            jp_y = res_y - dyn_jp_v
+            en_y = res_y - dyn_en_v
             jp_position = en_position = ""
-            if subtitle_x is not None:
-                center_x = max(0, min(res_x, float(subtitle_x)))
-                jp_position = f"{{\\pos({center_x:g},{res_y - dyn_jp_v})}}"
-                en_position = f"{{\\pos({center_x:g},{res_y - dyn_en_v})}}"
+            if subtitle_animation == "rise":
+                jp_position = f"{{\\move({center_x:g},{jp_y + 28:g},{center_x:g},{jp_y:g},0,180)}}"
+                en_position = f"{{\\move({center_x:g},{en_y + 28:g},{center_x:g},{en_y:g},0,180)}}"
+            elif subtitle_animation == "slide":
+                jp_position = f"{{\\move({center_x + 48:g},{jp_y:g},{center_x:g},{jp_y:g},0,180)}}"
+                en_position = f"{{\\move({center_x + 48:g},{en_y:g},{center_x:g},{en_y:g},0,180)}}"
+            elif subtitle_x is not None:
+                jp_position = f"{{\\pos({center_x:g},{jp_y:g})}}"
+                en_position = f"{{\\pos({center_x:g},{en_y:g})}}"
+            jp_position += compact_tag
+            en_position += compact_tag
 
             def apply_ass_karaoke(text: str, total_duration_s: float, is_jp: bool, word_list: Optional[list] = None) -> str:
                 if not text or total_duration_s <= 0:
@@ -735,23 +1149,46 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                             break
                         try:
                             word = str(item.get("word", "")).strip()
-                            word_duration = float(item.get("end")) - float(item.get("start"))
+                            word_start = float(item.get("start"))
+                            word_end = float(item.get("end"))
                         except (TypeError, ValueError):
                             timings = []
                             break
-                        if not word or word_duration <= 0:
+                        if (not word or not math.isfinite(word_start) or not math.isfinite(word_end)
+                                or word_end <= word_start or (timings and word_start < timings[-1][2])):
                             timings = []
                             break
-                        timings.append((word, word_duration))
+                        timings.append((word, word_start, word_end))
 
                 normalized_tokens = [token.lower() if not is_jp else token for token in tokens]
-                normalized_timing_words = [word.lower() if not is_jp else word for word, _ in timings]
+                normalized_timing_words = [word.lower() if not is_jp else word for word, _, _ in timings]
                 if len(timings) == len(tokens) and normalized_timing_words == normalized_tokens:
-                    weights = [duration for _, duration in timings]
+                    # Word bounds use the same source clock as the cue. ASS
+                    # karaoke advances sequentially, so retain rests as timed
+                    # zero-width syllables instead of stretching vocal words.
+                    event_origin = s if is_already_relative else clip_start + s
+                    cursor_cs = 0
+                    index = 0
+                    formatted_groups = []
+                    for group in token_groups:
+                        parts = []
+                        for token in group:
+                            _, word_start, word_end = timings[index]
+                            start_cs = max(0, min(total_cs, round((word_start - event_origin) * 100)))
+                            end_cs = max(start_cs, min(total_cs, round((word_end - event_origin) * 100)))
+                            rest = f"{{\\k{start_cs - cursor_cs}}}\u200b" if start_cs > cursor_cs else ""
+                            parts.append(rest + f"{{\\k{max(0, end_cs - max(cursor_cs, start_cs))}}}{token}")
+                            cursor_cs = max(cursor_cs, end_cs)
+                            index += 1
+                        formatted_groups.append(("" if is_jp else " ").join(parts))
+                    if cursor_cs < total_cs:
+                        formatted_groups[-1] += f"{{\\k{total_cs - cursor_cs}}}\u200b"
+                    return r"\N".join(formatted_groups)
                 else:
-                    # Phrase-level estimates cannot truthfully drive a word-level
-                    # karaoke sweep. Keep the subtitle synchronized as one cue.
-                    return text
+                    # The cue bounds come from the audio. When individual word
+                    # bounds are unavailable, create a smooth visual sweep across
+                    # the phrase so Karaoke does not degrade into static yellow text.
+                    weights = [max(1, len(token)) for token in tokens]
 
                 total_weight = sum(weights) or 1
                 durations = [max(1, int(round(total_cs * (weight / total_weight)))) for weight in weights]
@@ -778,21 +1215,30 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     formatted_groups.append(("" if is_jp else " ").join(parts))
                 return r"\N".join(formatted_groups)
 
+            if subtitle_animation == "none":
+                entry_tag = ""
+            elif subtitle_animation == "pop":
+                entry_tag = r"{\fscx116\fscy116\t(0,180,\fscx100\fscy100)\fad(100,150)}"
+            else:
+                fade_in_ms = min(120, round((e - s) * 250))
+                fade_out_ms = min(130, round((e - s) * 250))
+                entry_tag = f"{{\\fad({fade_in_ms},{fade_out_ms})}}"
+
             if formatted_jp:
                 if style_preset == "karaoke":
                     trusted_jp_words = line.get("words_jp") if line.get("timing_source") == "audio_aligned" else None
                     k_jp = apply_ass_karaoke(formatted_jp, e - s, True, trusted_jp_words)
-                    events.append(f"Dialogue: 1,{time_start},{time_end},Japanese,,0,0,{dyn_jp_v},,{jp_position}{k_jp}")
+                    events.append(f"Dialogue: 1,{time_start},{time_end},Japanese,,0,0,{dyn_jp_v},,{jp_position}{entry_tag}{k_jp}")
                 else:
-                    events.append(f"Dialogue: 1,{time_start},{time_end},Japanese,,0,0,{dyn_jp_v},,{jp_position}{{\\fad(220,150)}}{formatted_jp}")
+                    events.append(f"Dialogue: 1,{time_start},{time_end},Japanese,,0,0,{dyn_jp_v},,{jp_position}{entry_tag}{formatted_jp}")
             if formatted_en:
-                display_en = formatted_en.upper() if style_preset == "bold_lyrics" else formatted_en
+                display_en = formatted_en.upper() if style_preset in ("bold_lyrics", "pop_bounce", "manga_flash") else formatted_en
                 if style_preset == "karaoke":
                     trusted_en_words = line.get("words_en") if line.get("timing_source") == "audio_aligned" else None
                     k_en = apply_ass_karaoke(display_en, e - s, False, trusted_en_words)
-                    events.append(f"Dialogue: 2,{time_start},{time_end},English,,0,0,{dyn_en_v},,{en_position}{k_en}")
+                    events.append(f"Dialogue: 2,{time_start},{time_end},English,,0,0,{dyn_en_v},,{en_position}{entry_tag}{k_en}")
                 else:
-                    events.append(f"Dialogue: 2,{time_start},{time_end},English,,0,0,{dyn_en_v},,{en_position}{{\\fad(220,150)}}{display_en}")
+                    events.append(f"Dialogue: 2,{time_start},{time_end},English,,0,0,{dyn_en_v},,{en_position}{entry_tag}{display_en}")
 
         if not events:
             return False
@@ -810,8 +1256,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         """Builds comma-separated FFmpeg video filters for color grading and adjustments."""
         filters = []
         adj = color_adjustments or {}
-        intensity = max(0.0, min(1.0, (filter_intensity if filter_intensity is not None else 100.0) / 100.0))
+        intensity = max(0.0, min(4.0, (filter_intensity if filter_intensity is not None else 100.0) / 100.0))
         f_name = (color_filter or "original").lower().strip()
+
+        if f_name == "intel_custom":
+            return custom_rgb_filters(intensity, adj)
 
         # Base adjustments
         b_adj = float(adj.get("brightness", 0)) / 100.0   # -0.5 to 0.5
@@ -820,71 +1269,73 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         warmth = float(adj.get("warmth", 0))              # -50 to 50
         vignette_val = float(adj.get("vignette", 0))      # 0 to 100
 
-        # Filter preset deltas
-        f_contrast = 0.0
-        f_saturate = 0.0
-        f_brightness = 0.0
-        f_grayscale = False
-        cb_rs, cb_gs, cb_bs = 0.0, 0.0, 0.0
-
-        if f_name == "clarendon":
-            f_contrast, f_saturate, f_brightness = 0.20, 0.25, 0.03
-            cb_rs, cb_bs = 0.05, 0.08
-        elif f_name == "crema":
-            f_contrast, f_saturate, f_brightness = 0.05, -0.10, 0.02
-            cb_rs, cb_gs, cb_bs = 0.10, 0.05, -0.10
-        elif f_name == "gingham":
-            f_contrast, f_saturate, f_brightness = -0.08, -0.15, 0.05
-            cb_rs, cb_bs = 0.05, -0.05
-        elif f_name == "juno":
-            f_contrast, f_saturate, f_brightness = 0.15, 0.35, 0.02
-            cb_rs, cb_gs, cb_bs = 0.15, 0.05, -0.10
-        elif f_name == "lark":
-            f_contrast, f_saturate, f_brightness = 0.10, 0.15, 0.05
-            cb_rs, cb_bs = -0.05, 0.10
-        elif f_name == "ludwig":
-            f_contrast, f_saturate, f_brightness = 0.12, 0.10, 0.02
-            cb_rs, cb_gs, cb_bs = 0.10, 0.02, -0.08
-        elif f_name == "moon":
-            f_contrast, f_saturate, f_brightness = 0.25, -1.0, 0.03
-            f_grayscale = True
-        elif f_name == "perpetua":
-            f_contrast, f_saturate, f_brightness = 0.08, 0.10, 0.03
-            cb_gs, cb_bs, cb_rs = 0.08, 0.08, -0.05
-        elif f_name == "reyes":
-            f_contrast, f_saturate, f_brightness = -0.10, -0.15, 0.08
-            cb_rs, cb_gs, cb_bs = 0.15, 0.10, -0.15
-        elif f_name == "slumber":
-            f_contrast, f_saturate, f_brightness = 0.05, -0.25, 0.02
-            cb_rs, cb_gs, cb_bs = 0.18, 0.08, -0.18
-        elif f_name == "aden":
-            f_contrast, f_saturate, f_brightness = -0.05, 0.10, 0.05
-            cb_rs, cb_bs, cb_gs = 0.12, 0.10, -0.05
-        elif f_name == "anime_vivid":
-            f_contrast, f_saturate, f_brightness = 0.22, 0.40, 0.03
-        elif f_name == "cyberpunk":
-            f_contrast, f_saturate, f_brightness = 0.28, 0.45, 0.02
-            cb_rs, cb_bs, cb_gs = 0.20, 0.25, -0.10
+        # Keep export grading in lockstep with the CSS preview catalog in app.js.
+        # The old export-only colorbalance tints did not exist in the preview and
+        # gave skin tones a purple cast, especially with Cyberpunk.
+        preset_values = {
+            "clarendon": (0.20, 0.25, 0.05, 0.0, 0.00, 0.0),
+            "crema": (0.05, -0.10, 0.03, 0.0, 0.20, -10.0),
+            "gingham": (-0.08, -0.15, 0.08, 0.0, 0.08, 0.0),
+            "juno": (0.15, 0.35, 0.03, 0.0, 0.00, -8.0),
+            "lark": (0.10, 0.15, 0.08, 0.0, 0.00, 5.0),
+            "ludwig": (0.12, 0.10, 0.03, 0.0, 0.12, 0.0),
+            "moon": (0.25, -1.00, 0.05, 1.0, 0.00, 0.0),
+            "perpetua": (0.08, 0.10, 0.04, 0.0, 0.00, 15.0),
+            "reyes": (-0.10, -0.15, 0.12, 0.0, 0.25, 0.0),
+            "slumber": (0.05, -0.25, 0.03, 0.0, 0.30, 0.0),
+            "aden": (-0.05, 0.10, 0.08, 0.0, 0.00, -15.0),
+            "anime_vivid": (0.22, 0.40, 0.04, 0.0, 0.00, 0.0),
+            "cyberpunk": (0.28, 0.45, 0.02, 0.0, 0.00, -20.0),
+        }
+        f_contrast, f_saturate, f_brightness, f_grayscale, f_sepia, f_hue = preset_values.get(
+            f_name, (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        )
 
         # Calculate final eq parameters
         final_c = max(0.1, round(c_adj * (1.0 + f_contrast * intensity), 3))
         final_b = round(b_adj + (f_brightness * intensity), 3)
-        if f_grayscale and intensity > 0.9:
-            final_s = 0.0
-        else:
-            final_s = max(0.0, round(s_adj * (1.0 + f_saturate * intensity), 3))
+        final_s = max(0.0, round(
+            s_adj * (1.0 + f_saturate * intensity) * (1.0 - f_grayscale * intensity), 3
+        ))
 
         if abs(final_c - 1.0) > 0.01 or abs(final_b) > 0.005 or abs(final_s - 1.0) > 0.01:
             filters.append(f"eq=contrast={final_c}:brightness={final_b}:saturation={final_s}")
 
-        # Color balance (warmth + preset tint)
-        w_factor = warmth / 100.0
-        final_rs = round((cb_rs * intensity) + (w_factor * 0.2 if w_factor > 0 else 0), 3)
-        final_gs = round((cb_gs * intensity) + (w_factor * 0.05 if w_factor > 0 else 0), 3)
-        final_bs = round((cb_bs * intensity) - (w_factor * 0.25 if w_factor > 0 else -w_factor * 0.25), 3)
-
-        if abs(final_rs) > 0.01 or abs(final_gs) > 0.01 or abs(final_bs) > 0.01:
-            filters.append(f"colorbalance=rs={final_rs}:gs={final_gs}:bs={final_bs}:rm={final_rs*0.5:.3f}:bm={final_bs*0.5:.3f}")
+        # CSS applies sepia and hue rotation after contrast/saturation. Use the
+        # same operations in FFmpeg rather than an unrelated RGB color balance.
+        final_sepia = max(0.0, min(1.0, f_sepia * intensity + (warmth / 100.0) * 0.25 if warmth > 0 else f_sepia * intensity))
+        final_hue = f_hue * intensity
+        if warmth != 0:
+            final_hue += -warmth * (0.15 if warmth > 0 else 0.25)
+        if final_sepia > 0.01:
+            # Linear interpolation between the identity and CSS's sepia matrix.
+            inv = 1.0 - final_sepia
+            filters.append(
+                "colorchannelmixer="
+                f"rr={inv + 0.393 * final_sepia:.6f}:rg={0.769 * final_sepia:.6f}:rb={0.189 * final_sepia:.6f}:"
+                f"gr={0.349 * final_sepia:.6f}:gg={inv + 0.686 * final_sepia:.6f}:gb={0.168 * final_sepia:.6f}:"
+                f"br={0.272 * final_sepia:.6f}:bg={0.534 * final_sepia:.6f}:bb={inv + 0.131 * final_sepia:.6f}"
+            )
+        if abs(final_hue) > 0.1:
+            # CSS hue-rotate() is a luminance-preserving RGB matrix, not an HSV
+            # hue shift. FFmpeg's hue filter therefore changed skin tones even
+            # after the old purple colorbalance was removed. Reproduce the CSS
+            # matrix exactly so preview and export have the same color response.
+            angle = math.radians(final_hue)
+            cos_a = math.cos(angle)
+            sin_a = math.sin(angle)
+            filters.append(
+                "colorchannelmixer="
+                f"rr={0.213 + cos_a * 0.787 - sin_a * 0.213:.6f}:"
+                f"rg={0.715 - cos_a * 0.715 - sin_a * 0.715:.6f}:"
+                f"rb={0.072 - cos_a * 0.072 + sin_a * 0.928:.6f}:"
+                f"gr={0.213 - cos_a * 0.213 + sin_a * 0.143:.6f}:"
+                f"gg={0.715 + cos_a * 0.285 + sin_a * 0.140:.6f}:"
+                f"gb={0.072 - cos_a * 0.072 - sin_a * 0.283:.6f}:"
+                f"br={0.213 - cos_a * 0.213 - sin_a * 0.787:.6f}:"
+                f"bg={0.715 - cos_a * 0.715 + sin_a * 0.715:.6f}:"
+                f"bb={0.072 + cos_a * 0.928 + sin_a * 0.072:.6f}"
+            )
 
         # Vignette
         if vignette_val > 0.5:
@@ -894,6 +1345,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if not filters:
             return ""
         return "," + ",".join(filters)
+
 
     def render_reel(
         self,
@@ -910,6 +1362,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         lyrics: Optional[list] = None,
         show_lyrics: bool = True,
         subtitle_style: str = "minimal",
+        subtitle_animation: str = "auto",
         subtitle_language: Optional[str] = "both",
         smart_loop: bool = True,
         loop_mode: str = "standard",
@@ -917,6 +1370,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         fade_in: bool = False,
         fade_out: bool = False,
         fade_duration: float = 0.50,
+        hook_fade_start: float = 0.0,
         watermark: Optional[Dict[str, Any]] = None,
         creator_badge: Optional[Dict[str, Any]] = None,
         subtitle_color: Optional[str] = None,
@@ -927,9 +1381,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         progress_callback: Optional[Callable[[float, str], None]] = None,
         subtitle_y: Optional[int] = None,
         subtitle_font_size: Optional[float] = None,
-        subtitle_x: Optional[float] = None
+        subtitle_x: Optional[float] = None,
+        subtitle_font: str = "segoe",
+        audio_master: Optional[Dict[str, Any]] = None,
+        music: Optional[Dict[str, Any]] = None,
+        video_audio_volume: Optional[float] = None,
     ) -> str:
         """Renders video in 16:9 Landscape, 9:16 Vertical, or 1:1 Square using FFmpeg."""
+        hide_regions = _validated_hide_regions(template.get("hide_regions", []))
+        if video_audio_volume is not None:
+            video_audio_volume = float(video_audio_volume)
+            if not math.isfinite(video_audio_volume) or not 0 <= video_audio_volume <= 1:
+                raise ValueError("Video audio volume must be a finite number between 0 and 1.")
         source_path = Path(source_video).resolve()
         if str(source_video).startswith("blob:") or not source_path.is_file():
             raise FileNotFoundError(f"Source video file does not exist: {source_video}")
@@ -940,22 +1403,56 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             duration = min(35.0, info.duration)
             end_time = start_time + duration
 
+        music_path = None
+        if music and music.get("track_id"):
+            from app.video.music_library import music_library
+            music = dict(music)
+            track = music_library.get_track(music["track_id"])
+            music["start"] = float(music.get("start", 0))
+            music["end"] = float(music.get("end") or track["duration"])
+            music_library.validate_range(music["track_id"], music["start"], music["end"])
+            music_path = str(music_library.resolve_file(music["track_id"]))
+            for field, maximum in (("volume", 2), ("original_volume", 1),
+                                   ("fade_in", duration), ("fade_out", duration)):
+                value = float(music.get(field, 1 if field == "volume" else 0))
+                if not math.isfinite(value):
+                    raise ValueError(f"Music {field} must be a finite number.")
+                music[field] = max(0.0, min(maximum, value))
+            if video_audio_volume is not None:
+                music["original_volume"] = video_audio_volume
+
         out_path = Path(output_mp4).resolve()
         if out_path.exists() and out_path.stat().st_size:
             raise FileExistsError(f"Output already exists: {out_path}. Choose a new filename.")
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
+        master_filters = []
+        if info.has_audio and audio_master and audio_master.get("enabled"):
+            if progress_callback:
+                progress_callback(5.0, "Measuring and enhancing the selected song audio...")
+            master_filters = enhancement_filters(str(source_path), start_time, duration)
+
         temp_dir = Path(__file__).resolve().parent.parent.parent / "temp"
         temp_dir.mkdir(parents=True, exist_ok=True)
         overlay_png = str(temp_dir / f"overlay_{int(time.time()*1000)}.png")
+        hook_overlay_png = None
+        hook_scene_mask_png = None
+        try:
+            requested_hook_start = max(0.0, float(hook_fade_start))
+        except (TypeError, ValueError):
+            requested_hook_start = 0.0
+        hook_fade_active = requested_hook_start > 0 and requested_hook_start < duration
+        hook_overlay_input_duration = duration
+        hook_scene_mask_input_duration = duration
 
-        # Resolve output resolution based on aspect_ratio
+        # Reels render at true 4K vertical. Studio coordinates stay based on
+        # a 1080-wide design canvas and are scaled only for the final render.
         if aspect_ratio == "16:9":
             canvas_w, canvas_h = 1920, 1080
         elif aspect_ratio == "1:1":
             canvas_w, canvas_h = 1080, 1080
         else:
-            canvas_w, canvas_h = 1080, 1920
+            canvas_w, canvas_h = 2160, 3840
 
         # Pass actual video dimensions so text overlay border and positioning match exactly
         template.setdefault("video", {})["video_width"] = info.width
@@ -963,7 +1460,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         # Configure template parameters
         bg_cfg = template.get("background", {})
-        bg_type = str(bg_cfg.get("type", "blur")).strip().lower()
+        bg_type = str(bg_cfg.get("type", "black")).strip().lower()
         blur_val = bg_cfg.get("blur", 35)
         brightness = bg_cfg.get("brightness", -0.2)
         contrast = bg_cfg.get("contrast", 1.1)
@@ -971,6 +1468,45 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         zoom = bg_cfg.get("zoom", 1.25)
 
         # 1. Create styled text overlay
+        overlay_scale = canvas_w / 1080.0 if aspect_ratio == "9:16" else 1.0
+        overlay_template = _scale_reel_layout(template, overlay_scale)
+        overlay_watermark = _scale_reel_layout(watermark, overlay_scale) if watermark else watermark
+        overlay_creator_badge = _scale_reel_layout(creator_badge, overlay_scale) if creator_badge else creator_badge
+        scene_username_png = None
+        username_cfg = overlay_watermark if isinstance(overlay_watermark, dict) else overlay_template.get("watermark", {})
+        if username_cfg and username_cfg.get("enabled") and username_cfg.get("style") == "scene_blend" and str(username_cfg.get("text", "")).strip():
+            scene_username_png = str(temp_dir / f"username_{time.time_ns()}.png")
+            if template.get("studio_username_scene_mask") is not None:
+                username_mask = _decode_studio_png(
+                    template["studio_username_scene_mask"], canvas_w, canvas_h,
+                    "Studio Scene Blend username mask",
+                ).getchannel("A")
+            else:
+                username_mask = _scene_username_mask(canvas_w, canvas_h, username_cfg)
+            username_mask.save(scene_username_png, "PNG")
+        # The hook may be sent as a separate Studio-drawn layer so it can fade
+        # independently without dimming the username or subtitle overlays.
+        if template.get("studio_hook_overlay"):
+            hook_overlay_png = str(temp_dir / f"hook_overlay_{time.time_ns()}.png")
+            _decode_studio_png(
+                template["studio_hook_overlay"], canvas_w, canvas_h, "Studio hook overlay"
+            ).save(hook_overlay_png, "PNG")
+            if hook_fade_active:
+                hook_overlay_input_duration = min(
+                    duration,
+                    requested_hook_start + HOOK_FADE_DURATION + (1 / 30),
+                )
+        if template.get("studio_hook_scene_mask"):
+            hook_scene_mask_png = str(temp_dir / f"hook_scene_mask_{time.time_ns()}.png")
+            _decode_studio_png(
+                template["studio_hook_scene_mask"], canvas_w, canvas_h, "Studio Scene Blend hook mask"
+            ).save(hook_scene_mask_png, "PNG")
+            if hook_fade_active:
+                hook_scene_mask_input_duration = min(
+                    duration,
+                    requested_hook_start + HOOK_FADE_DURATION + (1 / 30),
+                )
+
         self.create_text_overlay_image(
             canvas_width=canvas_w,
             canvas_height=canvas_h,
@@ -978,39 +1514,53 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             song_name=song_name,
             anime_name=anime_name,
             caption=caption,
-            template=template,
+            template=overlay_template,
             output_png_path=overlay_png,
-            watermark=watermark,
-            creator_badge=creator_badge,
+            watermark=overlay_watermark,
+            creator_badge=overlay_creator_badge,
             bg_type=bg_type
         )
 
         vid_cfg = template.get("video", {})
         raw_v_offset = vid_cfg.get("vertical_offset")
         if raw_v_offset is None:
-            v_offset = 0 if aspect_ratio == "16:9" else -40
+            v_offset = 0
         else:
             try:
                 v_offset = int(raw_v_offset)
             except Exception:
-                v_offset = 0 if aspect_ratio == "16:9" else -40
+                v_offset = 0
+        if aspect_ratio == "9:16":
+            v_offset = round(v_offset * overlay_scale)
 
         try:
             fg_scale = float(vid_cfg.get("scale", 1.0) or 1.0)
         except Exception:
             fg_scale = 1.0
-        curved_border = vid_cfg.get("curved_border", True)
+        fg_scale = min(MAX_SONG_WINDOW_SCALE, max(0.10, fg_scale))
+        try:
+            raw_window_inset = float(vid_cfg.get("window_inset", 0) or 0)
+        except Exception:
+            raw_window_inset = 0
+        window_inset = min(MAX_SONG_WINDOW_INSET, max(0, raw_window_inset)) * (canvas_w / 1080.0)
+        border_shape = str(vid_cfg.get("border_shape", "")).lower()
+        if border_shape not in {"curved", "circular", "straight"}:
+            border_shape = "straight" if vid_cfg.get("curved_border", True) is False else "curved"
+        curved_border = border_shape != "straight"
+        circular_border = border_shape == "circular"
         try:
             c_radius = int(vid_cfg.get("corner_radius", 16) or 0) if curved_border else 0
         except Exception:
             c_radius = 16 if curved_border else 0
+        if aspect_ratio == "9:16":
+            c_radius = round(c_radius * overlay_scale)
         mask_png = None
         grading_filters = self.build_color_grading_filter(color_filter, filter_intensity, color_adjustments)
 
         if aspect_ratio == "16:9":
-            if fg_scale >= 0.999 and bg_type not in ("black", "white"):
+            if fg_scale >= 0.999 and bg_type not in ("black", "white") and not curved_border and not hide_regions:
                 composite_filter = (
-                    f"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
+                    f"[0:v]fps=30,scale=1920:1080:force_original_aspect_ratio=decrease,"
                     f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2{grading_filters}[v_base];"
                     f"[v_base][1:v]overlay=0:0[vout]"
                 )
@@ -1022,14 +1572,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 if fg_w % 2 != 0: fg_w += 1
                 fg_x = f"(1920-{fg_w})/2"
                 fg_y = f"(1080-{fg_h})/2+({v_offset})"
+                fg_x_px = (1920 - fg_w) // 2
+                fg_y_px = (1080 - fg_h) // 2 + v_offset
                 if bg_type in ("black", "white"):
                     bg_filter = f"color=c={bg_type}:s=1920x1080:d={duration}:r=30[bg];"
-                    v_in_fg = "[0:v]"
+                    bg_filter = "[0:v]fps=30[vsrc];" + bg_filter
+                    v_in_fg = "[vsrc]"
                 else:
                     bg_w, bg_h = _cover_scale(info.width or 1920, info.height or 1080, 1920, 1080, zoom)
                     blur_r = max(1, round(blur_val / 4))
                     bg_filter = (
-                        f"[0:v]split=2[v_bg_in][v_fg_in];"
+                        f"[0:v]fps=30,split=2[v_bg_in][v_fg_in];"
                         f"[v_bg_in]scale={bg_w}:{bg_h},"
                         f"crop=1920:1080,"
                         f"scale=480:270:flags=fast_bilinear,"
@@ -1038,13 +1591,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}[bg];"
                     )
                     v_in_fg = "[v_fg_in]"
-                if curved_border and c_radius > 0:
-                    eff_rad = min(c_radius, fg_w // 2, fg_h // 2)
+                if circular_border or (curved_border and c_radius > 0) or hide_regions:
                     mask_png = str(temp_dir / f"mask_{int(time.time()*1000)}.png")
-                    mask_img = Image.new("RGBA", (fg_w, fg_h), (0, 0, 0, 0))
-                    mask_draw = ImageDraw.Draw(mask_img)
-                    mask_draw.rounded_rectangle([0, 0, fg_w, fg_h], radius=eff_rad, fill=(255, 255, 255, 255))
-                    mask_img.save(mask_png, "PNG")
+                    _visible_rounded_mask(fg_w, fg_h, fg_x_px, fg_y_px, 1920, 1080, c_radius, circular=circular_border, hide_regions=hide_regions).save(mask_png, "PNG")
                     fg_filter = f"{v_in_fg}scale={fg_w}:{fg_h}{grading_filters}[fg_raw];[2:v]scale={fg_w}:{fg_h}[fg_mask];[fg_raw][fg_mask]alphamerge[fg];"
                 else:
                     fg_filter = f"{v_in_fg}scale={fg_w}:{fg_h}{grading_filters}[fg];"
@@ -1061,14 +1610,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             if fg_w % 2 != 0: fg_w += 1
             fg_x = f"(1080-{fg_w})/2"
             fg_y = f"(1080-{fg_h})/2"
+            fg_x_px = (1080 - fg_w) // 2
+            fg_y_px = (1080 - fg_h) // 2
             if bg_type in ("black", "white"):
                 bg_filter = f"color=c={bg_type}:s=1080x1080:d={duration}:r=30[bg];"
-                v_in_fg = "[0:v]"
+                bg_filter = "[0:v]fps=30[vsrc];" + bg_filter
+                v_in_fg = "[vsrc]"
             else:
                 bg_w, bg_h = _cover_scale(info.width or 1920, info.height or 1080, 1080, 1080, zoom)
                 blur_r = max(1, round(blur_val / 4))
                 bg_filter = (
-                    f"[0:v]split=2[v_bg_in][v_fg_in];"
+                    f"[0:v]fps=30,split=2[v_bg_in][v_fg_in];"
                     f"[v_bg_in]scale={bg_w}:{bg_h},"
                     f"crop=1080:1080,"
                     f"scale=270:270:flags=fast_bilinear,"
@@ -1077,13 +1629,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}[bg];"
                 )
                 v_in_fg = "[v_fg_in]"
-            if curved_border and c_radius > 0:
-                eff_rad = min(c_radius, fg_w // 2, fg_h // 2)
+            if circular_border or (curved_border and c_radius > 0) or hide_regions:
                 mask_png = str(temp_dir / f"mask_{int(time.time()*1000)}.png")
-                mask_img = Image.new("RGBA", (fg_w, fg_h), (0, 0, 0, 0))
-                mask_draw = ImageDraw.Draw(mask_img)
-                mask_draw.rounded_rectangle([0, 0, fg_w, fg_h], radius=eff_rad, fill=(255, 255, 255, 255))
-                mask_img.save(mask_png, "PNG")
+                _visible_rounded_mask(fg_w, fg_h, fg_x_px, fg_y_px, 1080, 1080, c_radius, circular=circular_border, hide_regions=hide_regions).save(mask_png, "PNG")
                 fg_filter = f"{v_in_fg}scale={fg_w}:{fg_h}{grading_filters}[fg_raw];[2:v]scale={fg_w}:{fg_h}[fg_mask];[fg_raw][fg_mask]alphamerge[fg];"
             else:
                 fg_filter = f"{v_in_fg}scale={fg_w}:{fg_h}{grading_filters}[fg];"
@@ -1094,39 +1642,36 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             )
         else:
             # 9:16 vertical
-            fg_w = int(1080 * fg_scale)
-            # Adapt frame height to actual natural video aspect ratio so the video is never cut and background fits cleanly
             vid_w = info.width or 1920
             vid_h = info.height or 1080
-            fg_h = int(round(fg_w * vid_h / vid_w))
-            if fg_h % 2 != 0: fg_h += 1
-            if fg_w % 2 != 0: fg_w += 1
-            fg_y = f"(1920-{fg_h})/2+({v_offset})"
-            fg_x = f"(1080-{fg_w})/2"
+            fg_w, fg_h, fg_x_px, fg_y_px = _contain_geometry(
+                vid_w, vid_h, canvas_w, canvas_h, fg_scale, v_offset)
+            fg_x, fg_y = str(fg_x_px), str(fg_y_px)
 
             if bg_type in ("black", "white"):
-                bg_filter = f"color=c={bg_type}:s=1080x1920:d={duration}:r=30[bg];"
-                v_in_fg = "[0:v]"
+                bg_filter = f"color=c={bg_type}:s={canvas_w}x{canvas_h}:d={duration}:r=30[bg];"
+                bg_filter = "[0:v]fps=30[vsrc];" + bg_filter
+                v_in_fg = "[vsrc]"
             else:
-                bg_w, bg_h = _cover_scale(info.width or 1920, info.height or 1080, 1080, 1920, zoom)
+                bg_w, bg_h = _cover_scale(info.width or 1920, info.height or 1080, canvas_w, canvas_h, zoom)
                 blur_r = max(1, round(blur_val / 4))
+                blur_w, blur_h = canvas_w // 4, canvas_h // 4
                 bg_filter = (
-                    f"[0:v]split=2[v_bg_in][v_fg_in];"
+                    f"[0:v]fps=30,split=2[v_bg_in][v_fg_in];"
                     f"[v_bg_in]scale={bg_w}:{bg_h},"
-                    f"crop=1080:1920,"
-                    f"scale=270:480:flags=fast_bilinear,"
+                    f"crop={canvas_w}:{canvas_h},"
+                    f"scale={blur_w}:{blur_h}:flags=fast_bilinear,"
                     f"boxblur={blur_r}:{blur_r}:1,"
-                    f"scale=1080:1920:flags=fast_bilinear,"
+                    f"scale={canvas_w}:{canvas_h}:flags=fast_bilinear,"
                     f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}[bg];"
                 )
                 v_in_fg = "[v_fg_in]"
-            if curved_border and c_radius > 0:
-                eff_rad = min(c_radius, fg_w // 2, fg_h // 2)
+            if circular_border or (curved_border and c_radius > 0) or window_inset > 0 or hide_regions:
                 mask_png = str(temp_dir / f"mask_{int(time.time()*1000)}.png")
-                mask_img = Image.new("RGBA", (fg_w, fg_h), (0, 0, 0, 0))
-                mask_draw = ImageDraw.Draw(mask_img)
-                mask_draw.rounded_rectangle([0, 0, fg_w, fg_h], radius=eff_rad, fill=(255, 255, 255, 255))
-                mask_img.save(mask_png, "PNG")
+                _visible_rounded_mask(
+                    fg_w, fg_h, fg_x_px, fg_y_px, canvas_w, canvas_h,
+                    c_radius if curved_border else 0, round(window_inset), circular=circular_border, hide_regions=hide_regions
+                ).save(mask_png, "PNG")
                 fg_filter = f"{v_in_fg}scale={fg_w}:{fg_h}{grading_filters}[fg_raw];[2:v]scale={fg_w}:{fg_h}[fg_mask];[fg_raw][fg_mask]alphamerge[fg];"
             else:
                 fg_filter = f"{v_in_fg}scale={fg_w}:{fg_h}{grading_filters}[fg];"
@@ -1136,17 +1681,70 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 f"[v_stage][1:v]overlay=0:0[vout]"
             )
 
+        # The username belongs above the scene and below the normal titles/subtitles.
+        input_paths = [str(source_path), overlay_png]
+        if mask_png:
+            input_paths.append(mask_png)
+        if scene_username_png:
+            username_input = len(input_paths)
+            input_paths.append(scene_username_png)
+            stage = "[v_base]" if "[v_base][1:v]overlay" in composite_filter else "[v_stage]"
+            composite_filter = composite_filter.replace(
+                f"{stage}[1:v]overlay=0:0[vout]",
+                _scene_username_filter(stage, username_input) + ";[wm_scene][1:v]overlay=0:0[vout]",
+            )
+
+        # Scene Blend hooks use their transparent Studio text layer as an
+        # alpha mask, then brighten the actual footage beneath it per frame.
+        # This keeps the hook colourful and visible instead of baking white
+        # letters into the export.
+        if hook_scene_mask_png:
+            hook_scene_input = len(input_paths)
+            input_paths.append(hook_scene_mask_png)
+            stage = "[wm_scene]" if scene_username_png else ("[v_base]" if "[v_base][1:v]overlay" in composite_filter else "[v_stage]")
+            mask_stream = f"[{hook_scene_input}:v]"
+            if hook_fade_active:
+                actual_hook_duration = min(HOOK_FADE_DURATION, max(0.05, duration - requested_hook_start))
+                composite_filter += (
+                    f";{mask_stream}loop=loop=-1:size=1:start=0,setpts=N/(30*TB),"
+                    f"trim=duration={hook_scene_mask_input_duration:.3f},format=rgba,"
+                    f"fade=t=out:st={requested_hook_start:.3f}:d={actual_hook_duration:.3f}:alpha=1[hook_scene_fade]"
+                )
+                mask_stream = "[hook_scene_fade]"
+            composite_filter = composite_filter.replace(
+                f"{stage}[1:v]overlay=0:0[vout]",
+                _scene_hook_filter(stage, mask_stream) + ";[hook_scene][1:v]overlay=0:0[vout]",
+            )
+
+        # Put the separately-rendered hook above the base Studio layer. It is
+        # static when its requested fade starts after this clip, preserving the
+        # useful "keep it until the end" behavior on a shorter trim.
+        v_out_tag = "[vout]"
+        if hook_overlay_png:
+            hook_input = len(input_paths)
+            input_paths.append(hook_overlay_png)
+            if hook_fade_active:
+                actual_hook_duration = min(HOOK_FADE_DURATION, max(0.05, duration - requested_hook_start))
+                composite_filter += (
+                    f";[{hook_input}:v]loop=loop=-1:size=1:start=0,setpts=N/(30*TB),"
+                    f"trim=duration={hook_overlay_input_duration:.3f},format=rgba,"
+                    f"fade=t=out:st={requested_hook_start:.3f}:d={actual_hook_duration:.3f}:alpha=1[hook_fade];"
+                    f"{v_out_tag}[hook_fade]overlay=0:0:eof_action=pass[vhook]"
+                )
+            else:
+                composite_filter += f";{v_out_tag}[{hook_input}:v]overlay=0:0[vhook]"
+            v_out_tag = "[vhook]"
+
         # Check if ASS subtitles should be burned
         ass_path = None
-        v_out_tag = "[vout]"
         if show_lyrics and lyrics:
             temp_ass_full = str((temp_dir / f"sub_{int(time.time()*1000)}.ass").resolve())
             sub_col = subtitle_color or template.get("subtitles", {}).get("color")
             sub_col_en = subtitle_color_en or template.get("subtitles", {}).get("color_en")
-            if self.create_ass_subtitles(lyrics, start_time, duration, temp_ass_full, style_preset=subtitle_style, aspect_ratio=aspect_ratio, subtitle_color=sub_col, subtitle_color_en=sub_col_en, bg_type=bg_type, subtitle_language=subtitle_language or "both", subtitle_y=subtitle_y, subtitle_font_size=subtitle_font_size, subtitle_x=subtitle_x):
+            if self.create_ass_subtitles(lyrics, start_time, duration, temp_ass_full, style_preset=subtitle_style, subtitle_animation=subtitle_animation, aspect_ratio=aspect_ratio, subtitle_color=sub_col, subtitle_color_en=sub_col_en, bg_type=bg_type, subtitle_language=subtitle_language or "both", subtitle_y=subtitle_y, subtitle_font_size=subtitle_font_size, subtitle_x=subtitle_x, subtitle_font=subtitle_font):
                 ass_path = temp_ass_full
                 ass_escaped = temp_ass_full.replace("\\", "/").replace(":", r"\:")
-                composite_filter += f";[vout]ass='{ass_escaped}'[vfinal]"
+                composite_filter += f";{v_out_tag}ass='{ass_escaped}'[vfinal]"
                 v_out_tag = "[vfinal]"
 
         # Video Fade In / Fade Out (Black Screen Transition)
@@ -1164,6 +1762,27 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             composite_filter += f";{v_out_tag}{fade_chain}[vfaded]"
             v_out_tag = "[vfaded]"
 
+        if (color_filter or "").strip().lower() == "intel_custom":
+            # Keep the new RGB look in RGB through every overlay. The overlay
+            # filter defaults to YUV/BT.601, which would change the graded RGB
+            # values before they are finally labelled BT.709.
+            composite_filter = re.sub(
+                r"overlay=([^;\[]+)",
+                lambda match: "overlay=" + match.group(1) + ":format=rgb",
+                composite_filter,
+            )
+
+        # PNG overlays and the canvas-style composite do not reliably retain
+        # source colour metadata. Set it on the final video stream itself,
+        # rather than only on the encoder, so x264 writes the complete BT.709
+        # VUI tags that mobile players use for brightness and saturation.
+        composite_filter += (
+            f";{v_out_tag}scale=in_range=auto:out_range=tv:out_color_matrix=bt709,"
+            "format=yuv420p,setparams=range=limited:color_primaries=bt709:"
+            "color_trc=bt709:colorspace=bt709[vcolor]"
+        )
+        v_out_tag = "[vcolor]"
+
         use_nvenc = _has_nvenc()
 
         cmd = ["ffmpeg", "-y"]
@@ -1171,13 +1790,23 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         cmd.extend([
             "-ss", str(start_time),
             "-t", str(duration),
-            "-i", str(source_path),
-            "-i", overlay_png
+            "-i", input_paths[0],
         ])
-        if mask_png:
-            cmd.extend(["-i", mask_png])
+        for image_input in input_paths[1:]:
+            # Decode each 4K PNG once. Static overlays hold their last frame;
+            # fading hooks repeat that decoded frame in a bounded loop filter.
+            # Looping the input instead would decode the PNG 30 times a second.
+            if image_input == hook_overlay_png or image_input == hook_scene_mask_png:
+                cmd.extend(["-framerate", "30", "-i", image_input])
+            else:
+                cmd.extend(["-i", image_input])
 
-        if not info.has_audio:
+        music_input = len(input_paths)
+        if music_path:
+            cmd.extend(["-ss", str(music["start"]), "-t", str(music["end"] - music["start"]),
+                        "-i", music_path])
+
+        if not info.has_audio and not music_path:
             cmd.extend([
                 "-f", "lavfi",
                 "-t", str(duration),
@@ -1185,45 +1814,74 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             ])
 
         # The silent lavfi input follows the optional rounded-corner mask input.
-        silent_audio_input = 3 if mask_png else 2
+        silent_audio_input = len(input_paths)
 
         a_out_tag = "0:a"
         if info.has_audio:
+            audio_filters = list(master_filters)
+            if video_audio_volume is not None and not music_path:
+                audio_filters.append(f"volume={video_audio_volume:.6f}")
             if smart_loop and loop_mode != "none":
                 fade_len = min(loop_fade_duration, duration / 4, 0.25)
                 st_tail = max(0.0, duration - fade_len)
-                loop_audio_filter = (
-                    f"[0:a]afade=t=in:st=0:d={fade_len}:curve=qsin,afade=t=out:st={st_tail}:d={fade_len}:curve=qsin[a_loop]"
-                )
-                composite_filter += f";{loop_audio_filter}"
-                a_out_tag = "[a_loop]"
+                audio_filters.extend([
+                    f"afade=t=in:st=0:d={fade_len}:curve=qsin",
+                    f"afade=t=out:st={st_tail}:d={fade_len}:curve=qsin",
+                ])
             else:
                 micro_out = max(0.0, duration - 0.02)
-                clean_audio_filter = f"[0:a]afade=t=in:st=0:d=0.02:curve=qsin,afade=t=out:st={micro_out}:d=0.02:curve=qsin[a_clean]"
-                composite_filter += f";{clean_audio_filter}"
-                a_out_tag = "[a_clean]"
+                audio_filters.extend([
+                    "afade=t=in:st=0:d=0.02:curve=qsin",
+                    f"afade=t=out:st={micro_out}:d=0.02:curve=qsin",
+                ])
+
+            audio_label = "a_master" if audio_master and audio_master.get("enabled") else "a_clean"
+            composite_filter += f";[0:a]{','.join(audio_filters)}[{audio_label}]"
+            a_out_tag = f"[{audio_label}]"
+
+        if music_path:
+            composite_filter += ";" + _music_audio_filter(
+                music_input, music, duration, a_out_tag if info.has_audio else None
+            )
+            a_out_tag = "[a_mix]"
 
         cmd.extend([
             "-filter_complex", composite_filter,
             "-map", v_out_tag,
+            # `-t` before the source input limits only that input. A looping
+            # hook overlay can otherwise keep the filter graph alive after the
+            # selected clip ends when the source contains audio. Apply the
+            # selected duration to the output as the final boundary.
+            "-t", f"{duration:.3f}",
             "-r", "30"
         ])
 
-        if info.has_audio:
+        if info.has_audio or music_path:
             cmd.extend(["-map", a_out_tag, "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "44100"])
         else:
             cmd.extend(["-map", f"{silent_audio_input}:a", "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100", "-shortest"])
 
-        # Video encoder: NVENC GPU or CPU fallback
+        # Video encoder: use the RTX GPU when its one-time smoke test succeeds.
+        # p2 and single-pass keep 4K exports responsive while CQ 19 and the
+        # existing 20–30 Mbps bitrate envelope retain the intended quality.
         if use_nvenc:
             cmd.extend([
                 "-c:v", "h264_nvenc",
-                "-preset", "p4",
+                "-gpu", "0",
+                "-preset", "p2",
+                "-multipass", "disabled",
                 "-rc", "vbr",
-                "-cq", "22",
-                "-b:v", "8M",
-                "-maxrate", "12M",
-                "-bufsize", "16M",
+                "-cq", "19",
+                "-b:v", "20M",
+                "-maxrate", "30M",
+                "-bufsize", "40M",
+                # The browser monitor displays the source as sRGB/BT.709.
+                # Explicitly tag the composited H.264 output the same way so
+                # players do not guess a different transfer curve or range.
+                "-color_range", "tv",
+                "-colorspace", "bt709",
+                "-color_primaries", "bt709",
+                "-color_trc", "bt709",
                 "-pix_fmt", "yuv420p",
                 "-movflags", "+faststart",
                 "-progress", "pipe:1",
@@ -1234,8 +1892,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             cmd.extend([
                 "-c:v", "libx264",
                 "-preset", "fast",
-                "-crf", "20",
+                "-crf", "18",
                 "-threads", "0",
+                "-color_range", "tv",
+                "-colorspace", "bt709",
+                "-color_primaries", "bt709",
+                "-color_trc", "bt709",
                 "-pix_fmt", "yuv420p",
                 "-movflags", "+faststart",
                 "-progress", "pipe:1",
@@ -1310,7 +1972,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         cpu_cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "20", "-threads", "0"])
                         skip = True
                         continue
-                    if arg in ("-preset", "-rc", "-cq", "-b:v", "-maxrate", "-bufsize"):
+                    if arg in ("-gpu", "-preset", "-multipass", "-rc", "-cq", "-b:v", "-maxrate", "-bufsize"):
                         skip = True
                         continue
                     cpu_cmd.append(arg)
@@ -1335,6 +1997,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     os.remove(ass_path)
                 if mask_png and os.path.exists(mask_png):
                     os.remove(mask_png)
+                if scene_username_png and os.path.exists(scene_username_png):
+                    os.remove(scene_username_png)
+                if hook_overlay_png and os.path.exists(hook_overlay_png):
+                    os.remove(hook_overlay_png)
+                if hook_scene_mask_png and os.path.exists(hook_scene_mask_png):
+                    os.remove(hook_scene_mask_png)
             except Exception:
                 pass
 

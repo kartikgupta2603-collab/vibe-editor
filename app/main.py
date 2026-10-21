@@ -4,26 +4,39 @@ import uuid
 import asyncio
 import threading
 import time
+import math
+import stat
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path, PureWindowsPath
 from typing import Dict, Any, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 import shutil
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, UploadFile, File
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.background import BackgroundTask
 
+from app.config.console import configure_console_utf8
+
+configure_console_utf8()
+
 from app.config.settings import get_settings, update_settings
 from app.video.probe import probe_video
-from app.video.renderer import renderer
+from app.video.renderer import renderer, watermark_font_path
+from app.video.audio_enhance import render_audio_preview
+from app.video.music_library import music_library, AUDIO_UPLOAD_EXTENSIONS, MAX_AUDIO_UPLOAD_BYTES
 from app.video.preview import render_preview_still, extract_preview_frame
-from app.video.downloader import YouTubeDownloader, DOWNLOAD_TASKS, ensure_browser_compatible
+from app.video.downloader import InstagramDownloader, YouTubeDownloader, DOWNLOAD_TASKS, ensure_browser_compatible, validate_instagram_video_url, extract_twitter_videos
+from app.video.image_downloader import download_post_images, validate_image_url, MAX_IMAGE_BYTES, FORMAT_EXTENSIONS
+from app.video.media_detection import detect_url_media
+from app.video.image_import import import_studio_image
 from app.templates.template_manager import template_manager
 from app.projects.project_manager import project_manager, atomic_write_json
 from app.ai.gemini_client import gemini_client
+from app.ai.gemini_transport import GeminiError
 from app.scheduler import instagram_scheduler
 
 @asynccontextmanager
@@ -33,7 +46,7 @@ async def lifespan(app: FastAPI):
     yield
     instagram_scheduler.stop_scheduler()
 
-app = FastAPI(title="Anime Song Reel Creator API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Vibe Editor API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -84,13 +97,32 @@ def _register_selected_media(raw_path: str) -> Path:
     return path
 
 
-def _reserve_export_path(out_dir: Path, requested_name: str) -> Path:
+def _export_name_stem(requested_name: str) -> str:
+    """Keep readable custom names while constraining them to a Windows basename."""
+    basename = PureWindowsPath(requested_name.strip()).name
+    if basename.lower().endswith(".mp4"):
+        basename = basename[:-4]
+    stem = "".join("_" if ord(c) < 32 or c in '<>:"/\\|?*' else c for c in basename)
+    stem = stem[:120].strip(" .") or "reel"
+    device = stem.split(".", 1)[0].upper()
+    reserved = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", "CLOCK$"}
+    reserved.update(f"{prefix}{number}" for prefix in ("COM", "LPT") for number in "123456789¹²³")
+    if device in reserved:
+        stem = f"reel_{stem}"[:120].rstrip(" .")
+    return stem
+
+
+def _reserve_export_path(out_dir: Path, requested_name: str, *, preserve_name: bool = False) -> Path:
     """Allocate a distinct output even when an explicit filename is reused."""
-    basename = PureWindowsPath(requested_name).name
-    stem = "".join(c if c.isalnum() or c in "_-" else "_" for c in Path(basename).stem)
-    stem = stem[:120].strip("_") or "reel"
-    for _ in range(10):
-        path = out_dir / f"{stem}_{uuid.uuid4().hex[:12]}.mp4"
+    if preserve_name:
+        stem = _export_name_stem(requested_name)
+    else:
+        basename = PureWindowsPath(requested_name).name
+        stem = "".join(c if c.isalnum() or c in "_-" else "_" for c in Path(basename).stem)
+        stem = stem[:120].strip("_") or "reel"
+    for attempt in range(10):
+        filename = f"{stem}.mp4" if preserve_name and attempt == 0 else f"{stem}_{uuid.uuid4().hex[:12]}.mp4"
+        path = out_dir / filename
         try:
             with path.open("xb"):
                 pass
@@ -145,11 +177,63 @@ class FullSubtitlesRequest(BaseModel):
     api_key: Optional[str] = None
 
 class ViralHooksRequest(BaseModel):
+    video_path: str = Field(min_length=1)
+    start_time: float = Field(ge=0, allow_inf_nan=False)
+    end_time: float = Field(gt=0, allow_inf_nan=False)
     song_name: Optional[str] = ""
     anime_name: Optional[str] = ""
     video_title: Optional[str] = ""
     mood: Optional[str] = "hype"
+    moment_type: Optional[str] = ""
+    moment_reason: Optional[str] = ""
+    creator_instruction: Optional[str] = Field(default="", max_length=24000)
     api_key: Optional[str] = None
+
+
+class InstagramCaptionRequest(BaseModel):
+    song_name: Optional[str] = ""
+    anime_name: Optional[str] = ""
+    video_title: Optional[str] = ""
+    hook: Optional[str] = ""
+    moment_type: Optional[str] = ""
+    creator_instruction: Optional[str] = Field(default="", max_length=24000)
+    api_key: Optional[str] = None
+
+
+class AudioMasterConfig(BaseModel):
+    """Optional, mix-safe audio processing for the rendered reel."""
+    enabled: bool = False
+
+
+class AudioPreviewRequest(BaseModel):
+    source_video: str
+    start_time: float = Field(default=0, ge=0, allow_inf_nan=False)
+    end_time: float = Field(gt=0, allow_inf_nan=False)
+    audio_master: AudioMasterConfig = Field(default_factory=AudioMasterConfig)
+
+    @model_validator(mode="after")
+    def valid_selection(self):
+        if not self.end_time > self.start_time:
+            raise ValueError("Select an audio preview with a positive duration.")
+        return self
+
+
+class MusicMixConfig(BaseModel):
+    track_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    start: float = Field(default=0, ge=0, allow_inf_nan=False)
+    end: float = Field(gt=0, allow_inf_nan=False)
+    volume: float = Field(default=1, ge=0, le=2, allow_inf_nan=False)
+    original_volume: float = Field(default=0, ge=0, le=2, allow_inf_nan=False)
+    fade_in: float = Field(default=0, ge=0, le=10, allow_inf_nan=False)
+    fade_out: float = Field(default=0, ge=0, le=10, allow_inf_nan=False)
+    loop: bool = False
+
+    @model_validator(mode="after")
+    def valid_range(self):
+        if self.end <= self.start:
+            raise ValueError("Music end must be after start.")
+        return self
+
 
 class ExportRequest(BaseModel):
     source_video: str
@@ -166,12 +250,14 @@ class ExportRequest(BaseModel):
     lyrics: Optional[list] = None
     show_lyrics: Optional[bool] = True
     subtitle_style: Optional[str] = "minimal"
+    subtitle_animation: Optional[str] = "auto"
     smart_loop: Optional[bool] = True
     loop_mode: Optional[str] = "standard"
     loop_fade_duration: Optional[float] = 0.35
     fade_in: Optional[bool] = False
     fade_out: Optional[bool] = False
     fade_duration: Optional[float] = 0.50
+    hook_fade_start: Optional[float] = 0.0
     watermark: Optional[Dict[str, Any]] = None
     creator_badge: Optional[Dict[str, Any]] = None
     subtitle_color: Optional[str] = None
@@ -183,6 +269,10 @@ class ExportRequest(BaseModel):
     subtitle_y: Optional[int] = None
     subtitle_x: Optional[int] = None
     subtitle_font_size: Optional[int] = None
+    subtitle_font: Optional[str] = "segoe"
+    audio_master: Optional[AudioMasterConfig] = None
+    music: Optional[MusicMixConfig] = None
+    video_audio_volume: Optional[float] = Field(default=None, ge=0, le=1, allow_inf_nan=False)
 
 
 RenderReelRequest = ExportRequest
@@ -212,6 +302,16 @@ class ScheduleUpdateRequest(BaseModel):
     cover_timestamp: Optional[float] = None
 
 # Settings endpoints
+@app.get("/api/fonts/{font_key}")
+def api_username_font(font_key: str):
+    path = watermark_font_path(font_key)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Choose one of the available username fonts.")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="This username font is not installed. Choose another font.")
+    return FileResponse(path, media_type="font/ttf")
+
+
 @app.get("/api/settings")
 def api_get_settings():
     s = get_settings()
@@ -308,7 +408,7 @@ def api_probe_video(req: ProbeRequest):
 
 class CompatibleVideoRequest(BaseModel):
     file_path: str
-    force: bool = True
+    force: bool = False
 
 @app.post("/api/video/ensure-compatible")
 def api_ensure_compatible(req: CompatibleVideoRequest):
@@ -323,6 +423,185 @@ def api_ensure_compatible(req: CompatibleVideoRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# Original images stay available separately from the Studio's still-video source.
+@app.post("/api/images/upload")
+async def api_upload_image(file: UploadFile = File(...)):
+    """Keep a validated local image unchanged for the existing Studio import flow."""
+    import re
+    import warnings
+    from PIL import Image, UnidentifiedImageError
+
+    destination = None
+    target = None
+    completed = False
+    try:
+        image_root = (APP_ROOT / "downloads" / "images").resolve()
+        if not image_root.is_relative_to(APP_ROOT.resolve()):
+            raise HTTPException(status_code=400, detail="The image upload folder is outside the application folder.")
+        image_root.mkdir(parents=True, exist_ok=True)
+        destination = image_root / f"upload_{uuid.uuid4().hex}"
+        destination.mkdir()
+        target = destination / "original.part"
+        size = 0
+        with target.open("xb") as output:
+            while chunk := await file.read(64 * 1024):
+                size += len(chunk)
+                if size > MAX_IMAGE_BYTES:
+                    raise HTTPException(status_code=413, detail="Choose an image smaller than 30 MB.")
+                output.write(chunk)
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                with Image.open(target) as image:
+                    extension = FORMAT_EXTENSIONS.get(image.format)
+                    width, height = image.size
+                    if not extension:
+                        raise HTTPException(status_code=400, detail="Choose a JPEG, PNG, WebP, GIF, AVIF, BMP or TIFF image.")
+                    image.verify()
+        except (UnidentifiedImageError, OSError, SyntaxError, Image.DecompressionBombError,
+                Image.DecompressionBombWarning) as exc:
+            raise HTTPException(status_code=400, detail="This file is not a valid supported image. Choose another image.") from exc
+        original_name = PureWindowsPath(file.filename or "image").name
+        stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", Path(original_name).stem).strip(" .")[:120] or "image"
+        if stem.upper().split(".", 1)[0] in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}:
+            stem = f"image_{stem}"
+        saved = destination / f"{stem}.{extension}"
+        target.rename(saved)
+        target = saved
+        completed = True
+        return {"file_path": str(saved.resolve()), "filename": saved.name, "width": width, "height": height}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Local image upload failed")
+        raise HTTPException(status_code=500, detail="Could not save this image. Check available disk space and try again.") from exc
+    finally:
+        await file.close()
+        if not completed and destination is not None:
+            try:
+                if target is not None:
+                    target.unlink(missing_ok=True)
+                destination.rmdir()
+            except OSError:
+                logging.getLogger(__name__).exception("Could not clean up incomplete image upload %s", destination)
+
+
+class ImageImportRequest(BaseModel):
+    file_path: str
+    duration: float = Field(default=10.0, ge=1, le=300, allow_inf_nan=False)
+
+
+def _execute_image_import(task_id: str, req: ImageImportRequest):
+    try:
+        def progress(percent: float, message: str):
+            DOWNLOAD_TASKS[task_id].update({"status": "importing", "progress": percent, "message": message})
+        result = import_studio_image(req.file_path, req.duration, progress_callback=progress)
+        DOWNLOAD_TASKS[task_id].update({**result, "status": "completed", "progress": 100.0,
+                                       "message": "Image ready in Studio."})
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Studio image import failed for task %s", task_id)
+        DOWNLOAD_TASKS[task_id].update({"status": "error", "message": str(exc)})
+
+
+@app.post("/api/images/import")
+def api_import_image(req: ImageImportRequest, background_tasks: BackgroundTasks):
+    _prune_task_dict(DOWNLOAD_TASKS)
+    task_id = str(uuid.uuid4())
+    DOWNLOAD_TASKS[task_id] = {"id": task_id, "media_type": "images", "status": "queued",
+                               "progress": 0.0, "message": "Preparing image for Studio…"}
+    background_tasks.add_task(_execute_image_import, task_id, req)
+    return {"task_id": task_id}
+
+
+@app.get("/api/images/source")
+def api_image_source(path: str = Query(...)):
+    """Recover the original photo for an existing image-based Studio clip."""
+    import json
+    clip = Path(path).resolve()
+    image_root = (APP_ROOT / "downloads" / "images").resolve()
+    studio_root = (image_root / "studio").resolve()
+    if not clip.is_relative_to(studio_root) or clip.suffix.lower() != ".mp4" or not clip.is_file():
+        raise HTTPException(status_code=404, detail="This source is not a Studio image clip")
+    metadata_path = clip.with_suffix(".image.json")
+    try:
+        if metadata_path.is_file():
+            data = json.loads(metadata_path.read_text(encoding="utf-8"))
+        else:
+            # Existing imports in this server session predate persistent metadata.
+            data = next((task for task in DOWNLOAD_TASKS.values()
+                         if task.get("status") == "completed" and task.get("source_image_path")
+                         and Path(task.get("file_path", "")).resolve() == clip), None)
+            if not data:
+                raise HTTPException(status_code=404, detail="Re-upload this image once to enable live duration changes")
+        source = Path(data["source_image_path"]).resolve()
+        duration = float(data["duration"])
+        if not source.is_relative_to(image_root) or not source.is_file() or not math.isfinite(duration) or not 1 <= duration <= 300:
+            raise ValueError("Invalid image source metadata")
+        return {"source_image_path": str(source), "duration": duration,
+                "title": str(data.get("title") or source.stem)}
+    except HTTPException:
+        raise
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        logging.getLogger(__name__).warning("Cannot restore Studio image source for %s: %s", clip, exc)
+        raise HTTPException(status_code=400, detail="Could not restore the original image. Re-upload it to change its duration.") from exc
+
+
+def _execute_image_download(task_id: str, url: str):
+    try:
+        def progress(percent: float, message: str):
+            DOWNLOAD_TASKS[task_id].update({"status": "downloading", "progress": percent, "message": message})
+        files = download_post_images(url, progress_callback=progress)
+        if not files:
+            raise ValueError("No downloadable images were found in this post.")
+        DOWNLOAD_TASKS[task_id].update({
+            "status": "completed", "progress": 100.0, "files": files,
+            "message": f"{len(files)} image(s) downloaded at source quality.",
+        })
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Image download failed for task %s", task_id)
+        DOWNLOAD_TASKS[task_id].update({"status": "error", "message": str(exc)})
+
+
+@app.post("/api/images/download")
+@app.post("/api/images/download/")
+def api_start_image_download(req: YouTubeDownloadRequest, background_tasks: BackgroundTasks):
+    try:
+        url = validate_image_url(req.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _prune_task_dict(DOWNLOAD_TASKS)
+    task_id = str(uuid.uuid4())
+    DOWNLOAD_TASKS[task_id] = {
+        "id": task_id, "media_type": "images", "status": "queued",
+        "progress": 0.0, "message": "Finding images…", "files": [],
+    }
+    background_tasks.add_task(_execute_image_download, task_id, url)
+    return {"task_id": task_id}
+
+
+@app.get("/api/images/status/{task_id}")
+def api_get_image_status(task_id: str):
+    task = DOWNLOAD_TASKS.get(task_id)
+    if not task or task.get("media_type") != "images":
+        raise HTTPException(status_code=404, detail="Image download task not found")
+    return task
+
+
+@app.api_route("/api/images/file", methods=["GET", "HEAD"])
+def api_download_image(path: str = Query(...), download: bool = True):
+    image_types = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+                   ".webp": "image/webp", ".gif": "image/gif", ".avif": "image/avif",
+                   ".bmp": "image/bmp", ".tif": "image/tiff", ".tiff": "image/tiff"}
+    image_path = Path(path).resolve()
+    image_root = (APP_ROOT / "downloads" / "images").resolve()
+    if not image_path.is_relative_to(image_root) or image_path.suffix.lower() not in image_types:
+        raise HTTPException(status_code=403, detail="Access denied: only downloaded images may be served")
+    if not image_path.is_file():
+        raise HTTPException(status_code=404, detail="Downloaded image not found")
+    return FileResponse(str(image_path), media_type=image_types[image_path.suffix.lower()],
+                        filename=image_path.name if download else None)
+
+
 # YouTube Video Downloader endpoints
 def _execute_yt_download(task_id: str, url: str):
     try:
@@ -330,41 +609,34 @@ def _execute_yt_download(task_id: str, url: str):
         dl_res = YouTubeDownloader.download_video(url=url, task_id=task_id)
         file_path = dl_res.get("file_path") if isinstance(dl_res, dict) else DOWNLOAD_TASKS[task_id].get("file_path")
         title = dl_res.get("title") if isinstance(dl_res, dict) else ""
-        song_name = dl_res.get("song_name") if isinstance(dl_res, dict) else ""
-        anime_name = dl_res.get("anime_name") if isinstance(dl_res, dict) else ""
-        duration = float(dl_res.get("duration") or 0.0) if isinstance(dl_res, dict) else 0.0
-
-        ai_failed = False
-        if file_path:
-            DOWNLOAD_TASKS[task_id]["status"] = "analyzing"
-            DOWNLOAD_TASKS[task_id]["progress"] = 92.0
-            DOWNLOAD_TASKS[task_id]["message"] = "✨ Gemini AI: Listening to vocals & generating full-video subtitles..."
-            try:
-                ai_data = asyncio.run(gemini_client.generate_full_video_subtitles(
-                    video_path=file_path,
-                    song_name=song_name or "",
-                    anime_name=anime_name or "",
-                    video_title=title or "",
-                    duration=duration
-                ))
-                if ai_data:
-                    DOWNLOAD_TASKS[task_id]["song_name"] = ai_data.get("song_name") or song_name
-                    DOWNLOAD_TASKS[task_id]["anime_name"] = ai_data.get("anime_name") or anime_name
-                    DOWNLOAD_TASKS[task_id]["lyrics"] = ai_data.get("lyrics", [])
-                    DOWNLOAD_TASKS[task_id]["subtitle_style"] = ai_data.get("subtitle_style", "bold_lyrics")
-                    DOWNLOAD_TASKS[task_id]["subtitle_style_reason"] = ai_data.get("subtitle_style_reason", "")
-                    DOWNLOAD_TASKS[task_id]["ai_analysis"] = ai_data
-            except Exception as e_ai:
-                print(f"[YouTube Download] AI full-subtitle generation note: {e_ai}")
-                DOWNLOAD_TASKS[task_id]["lyrics"] = []
-                ai_failed = True
-
-        DOWNLOAD_TASKS[task_id]["status"] = "completed"
-        DOWNLOAD_TASKS[task_id]["progress"] = 100.0
-        DOWNLOAD_TASKS[task_id]["message"] = "Download Complete!" if not ai_failed else "Download Complete (AI subtitles skipped)."
+        DOWNLOAD_TASKS[task_id].update({
+            "file_path": file_path,
+            "title": title,
+            "status": "completed",
+            "progress": 100.0,
+            "message": "Video downloaded. Generate subtitles or find a moment when you choose.",
+        })
     except Exception as e:
         DOWNLOAD_TASKS[task_id]["status"] = "error"
         DOWNLOAD_TASKS[task_id]["message"] = str(e)
+        logging.getLogger(__name__).exception("Video download failed for task %s", task_id)
+
+
+def _execute_instagram_download(task_id: str, url: str):
+    try:
+        _prune_task_dict(DOWNLOAD_TASKS)
+        dl_res = InstagramDownloader.download_video(url=url, task_id=task_id)
+        file_path = dl_res.get("file_path") if isinstance(dl_res, dict) else None
+        title = dl_res.get("title") if isinstance(dl_res, dict) else ""
+        DOWNLOAD_TASKS[task_id].update({
+            "file_path": file_path,
+            "title": title,
+            "status": "completed",
+            "progress": 100.0,
+            "message": "Video downloaded. Generate subtitles or find a moment when you choose.",
+        })
+    except Exception as exc:
+        DOWNLOAD_TASKS[task_id].update({"status": "error", "message": str(exc)})
 
 @app.post("/api/youtube/info")
 def api_youtube_info(req: YouTubeInfoRequest):
@@ -372,6 +644,26 @@ def api_youtube_info(req: YouTubeInfoRequest):
         return YouTubeDownloader.get_video_info(req.url)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/twitter/videos")
+def api_twitter_videos(req: YouTubeInfoRequest):
+    try:
+        return {"videos": [{key: value for key, value in video.items() if key != "info"}
+                           for video in extract_twitter_videos(req.url)]}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/media/detect")
+def api_detect_media(req: YouTubeInfoRequest):
+    try:
+        return detect_url_media(req.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logging.getLogger(__name__).exception("URL media detection failed")
+        raise HTTPException(status_code=400, detail=f"Could not detect this link's media: {exc}") from exc
 
 @app.post("/api/youtube/download")
 @app.post("/api/youtube/download/")
@@ -398,6 +690,31 @@ def api_get_youtube_status(task_id: str):
         raise HTTPException(status_code=404, detail="Task not found")
     return task
 
+
+@app.post("/api/instagram/download")
+@app.post("/api/instagram/download/")
+def api_start_instagram_download(req: YouTubeDownloadRequest, background_tasks: BackgroundTasks):
+    try:
+        url = validate_instagram_video_url(req.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    task_id = str(uuid.uuid4())
+    DOWNLOAD_TASKS[task_id] = {
+        "id": task_id, "status": "queued", "progress": 0.0,
+        "message": "Queued for Instagram download...", "file_path": None,
+    }
+    background_tasks.add_task(_execute_instagram_download, task_id, url)
+    return {"task_id": task_id}
+
+
+@app.get("/api/instagram/status/{task_id}")
+@app.get("/api/instagram/status/{task_id}/")
+def api_get_instagram_status(task_id: str):
+    task = DOWNLOAD_TASKS.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
 # AI analysis endpoint
 @app.post("/api/ai/analyze")
 async def api_analyze_song(req: AnalyzeRequest):
@@ -412,7 +729,8 @@ async def api_analyze_song(req: AnalyzeRequest):
         )
         return data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.getLogger(__name__).warning("Song analysis failed: %s", e)
+        raise HTTPException(status_code=getattr(e, "status_code", 400 if isinstance(e, ValueError) else 502), detail=str(e)) from e
 
 @app.post("/api/ai/lyrics")
 async def api_generate_lyrics(req: LyricsRequest):
@@ -429,12 +747,13 @@ async def api_generate_lyrics(req: LyricsRequest):
         if isinstance(data, dict):
             return {
                 "lyrics": data.get("lyrics", []),
-                "subtitle_style": data.get("subtitle_style", "bold_lyrics"),
-                "style_reason": data.get("style_reason", "")
+                "status": data.get("status", "success"),
+                "message": data.get("message", ""),
             }
-        return {"lyrics": data, "subtitle_style": "bold_lyrics", "style_reason": ""}
+        return {"lyrics": data}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.getLogger(__name__).warning("Subtitle generation failed: %s", e)
+        raise HTTPException(status_code=getattr(e, "status_code", 400 if isinstance(e, ValueError) else 502), detail=str(e)) from e
 
 @app.post("/api/ai/full-subtitles")
 async def api_generate_full_subtitles(req: FullSubtitlesRequest):
@@ -449,21 +768,49 @@ async def api_generate_full_subtitles(req: FullSubtitlesRequest):
         )
         return data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.getLogger(__name__).warning("Full subtitle generation failed: %s", e)
+        raise HTTPException(status_code=getattr(e, "status_code", 400 if isinstance(e, ValueError) else 502), detail=str(e)) from e
 
 @app.post("/api/ai/viral-hooks")
 async def api_generate_viral_hooks(req: ViralHooksRequest):
+    video_path = _validate_safe_media_path(req.video_path)
+    if not 0 < req.end_time - req.start_time <= 360:
+        raise HTTPException(status_code=400, detail="Select a reel section between 0 and 360 seconds long.")
     try:
         hooks = await gemini_client.generate_viral_hooks(
+            video_path=str(video_path),
+            start_time=req.start_time,
+            end_time=req.end_time,
             song_name=req.song_name or "",
             anime_name=req.anime_name or "",
             video_title=req.video_title or "",
             mood=req.mood or "hype",
+            moment_type=req.moment_type or "",
+            moment_reason=req.moment_reason or "",
+            creator_instruction=req.creator_instruction or "",
             api_key_override=req.api_key
         )
         return {"hooks": hooks}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.getLogger(__name__).warning("Hook generation failed: %s", e)
+        raise HTTPException(status_code=getattr(e, "status_code", 400 if isinstance(e, ValueError) else 502), detail=str(e)) from e
+
+
+@app.post("/api/ai/instagram-caption")
+async def api_generate_instagram_caption(req: InstagramCaptionRequest):
+    try:
+        return await gemini_client.generate_instagram_caption(
+            song_name=req.song_name or "",
+            anime_name=req.anime_name or "",
+            video_title=req.video_title or "",
+            hook=req.hook or "",
+            moment_type=req.moment_type or "",
+            creator_instruction=req.creator_instruction or "",
+            api_key_override=req.api_key,
+        )
+    except Exception as e:
+        logging.getLogger(__name__).warning("Caption generation failed: %s", e)
+        raise HTTPException(status_code=getattr(e, "status_code", 400 if isinstance(e, ValueError) else 502), detail=str(e)) from e
 
 # Templates endpoints
 @app.get("/api/templates")
@@ -505,6 +852,159 @@ def api_render_preview(req: RenderStillRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/audio/preview")
+def api_audio_preview(req: AudioPreviewRequest):
+    source = _validate_safe_media_path(req.source_video)
+    info = probe_video(str(source))
+    if not info.has_audio:
+        raise HTTPException(status_code=400, detail="This video has no audio track.")
+    if req.start_time >= info.duration or req.end_time > info.duration + 0.1:
+        raise HTTPException(status_code=400, detail="The selection extends beyond this video.")
+    temp_dir = APP_ROOT / "temp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    output = temp_dir / f"audio_preview_{uuid.uuid4().hex}.wav"
+    try:
+        render_audio_preview(str(source), output, req.start_time,
+                             req.end_time - req.start_time, req.audio_master.enabled)
+        return FileResponse(output, media_type="audio/wav",
+                            background=BackgroundTask(output.unlink, missing_ok=True))
+    except Exception as exc:
+        output.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"Cannot prepare audio preview: {exc}") from exc
+
+
+class MusicImportRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=8192)
+    name: str = Field(default="", max_length=200)
+
+
+class MusicNameRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+class MusicRangeRequest(MusicNameRequest):
+    start: float = Field(ge=0, allow_inf_nan=False)
+    end: float = Field(gt=0, allow_inf_nan=False)
+
+
+class MusicHighlightsRequest(BaseModel):
+    duration: float = Field(default=35, gt=0, le=900, allow_inf_nan=False)
+
+
+def _music_error(exc: Exception):
+    status = 404 if isinstance(exc, (KeyError, FileNotFoundError)) else 400 if isinstance(exc, ValueError) else 500
+    raise HTTPException(status_code=status, detail=str(exc).strip("'")) from exc
+
+
+@app.get("/api/music")
+def api_list_music(q: str = Query(default="", max_length=200)):
+    try:
+        return {"tracks": music_library.list_tracks(q)}
+    except (RuntimeError, OSError) as exc:
+        _music_error(exc)
+
+
+@app.post("/api/music/import")
+def api_import_music(req: MusicImportRequest):
+    try:
+        return {"task_id": music_library.start_import(req.url, req.name)}
+    except (ValueError, RuntimeError, OSError) as exc:
+        _music_error(exc)
+
+
+@app.post("/api/music/upload")
+def api_upload_music(file: UploadFile = File(...), name: str = Form(default="")):
+    """Copy a local audio upload in bounded chunks, then prepare it off the request thread."""
+    temporary = None
+    handed_off = False
+    try:
+        filename = PureWindowsPath(file.filename or "").name
+        suffix = Path(filename).suffix.lower()
+        if suffix not in AUDIO_UPLOAD_EXTENSIONS:
+            raise HTTPException(status_code=400, detail="Choose a supported audio file: MP3, WAV, M4A, AAC, FLAC, OGG, OPUS, WMA or AIFF.")
+        if name.strip():
+            music_library._name(name)
+        if file.size is not None and file.size > MAX_AUDIO_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Audio files must be 256 MB or smaller.")
+        upload_dir = APP_ROOT / "temp" / "music_uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        temporary = upload_dir / f"{uuid.uuid4().hex}{suffix}"
+        size = 0
+        with temporary.open("xb") as output:
+            while chunk := file.file.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_AUDIO_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="Audio files must be 256 MB or smaller.")
+                output.write(chunk)
+        if not size:
+            raise HTTPException(status_code=400, detail="The audio file is empty. Choose a playable audio file.")
+        task_id = music_library.start_local_import(temporary, filename, name)
+        handed_off = True
+        return {"task_id": task_id}
+    except (ValueError, RuntimeError, OSError) as exc:
+        _music_error(exc)
+    finally:
+        file.file.close()
+        if temporary is not None and not handed_off:
+            temporary.unlink(missing_ok=True)
+
+
+@app.get("/api/music/tasks/{task_id}")
+def api_music_task(task_id: str):
+    try:
+        return music_library.task(task_id)
+    except KeyError as exc:
+        _music_error(exc)
+
+
+@app.patch("/api/music/{track_id}")
+def api_rename_music(track_id: str, req: MusicNameRequest):
+    try:
+        return music_library.rename(track_id, req.name)
+    except (KeyError, ValueError, RuntimeError, OSError) as exc:
+        _music_error(exc)
+
+
+@app.post("/api/music/{track_id}/ranges")
+def api_save_music_range(track_id: str, req: MusicRangeRequest):
+    try:
+        return music_library.save_range(track_id, req.name, req.start, req.end)
+    except (KeyError, ValueError, RuntimeError, OSError) as exc:
+        _music_error(exc)
+
+
+@app.delete("/api/music/{track_id}")
+def api_delete_music(track_id: str):
+    try:
+        music_library.delete(track_id)
+        return {"deleted": track_id}
+    except (KeyError, ValueError, RuntimeError, OSError) as exc:
+        _music_error(exc)
+
+
+@app.post("/api/music/{track_id}/highlights")
+async def api_music_highlights(track_id: str, req: MusicHighlightsRequest):
+    from app.ai.music_highlights import find_music_highlights, HighlightError
+    try:
+        source = await asyncio.to_thread(music_library.resolve_file, track_id)
+        result = await find_music_highlights(source, req.duration, get_settings().gemini_api_key)
+        await asyncio.to_thread(music_library.save_highlights, track_id, result)
+        return result
+    except HighlightError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except (KeyError, ValueError, FileNotFoundError, RuntimeError, OSError) as exc:
+        _music_error(exc)
+
+
+@app.api_route("/api/music/{track_id}/file", methods=["GET", "HEAD"])
+def api_music_file(track_id: str):
+    try:
+        path = music_library.resolve_file(track_id)
+        return FileResponse(path, media_type="audio/mpeg" if path.suffix == ".mp3" else "audio/mp4")
+    except (KeyError, FileNotFoundError, RuntimeError, OSError) as exc:
+        _music_error(exc)
+
+
 # Reel Export Execution
 def _execute_export(task_id: str, req: ExportRequest):
     try:
@@ -522,6 +1022,9 @@ def _execute_export(task_id: str, req: ExportRequest):
 
         # A missing source must never silently select a different user's clip.
         source_path = Path(req.source_video).resolve()
+        if req.music:
+            music_library.validate_range(req.music.track_id, req.music.start, req.music.end)
+            music_library.resolve_file(req.music.track_id)
         resolved_src = str(source_path)
         if not source_path.is_file() or req.source_video.startswith("blob:"):
             raise FileNotFoundError(
@@ -534,8 +1037,10 @@ def _execute_export(task_id: str, req: ExportRequest):
         tpl_name = tpl.get("name", "custom").lower()
         aspect_slug = "16x9" if req.aspect_ratio == "16:9" else ("1x1" if req.aspect_ratio == "1:1" else "9x16")
         day_num = req.day_number if req.day_number is not None else 1
-        filename = req.output_name or f"{safe_song}_DAY_{day_num:02d}_{tpl_name}_{aspect_slug}.mp4"
-        out_file = str(_reserve_export_path(out_dir, filename))
+        custom_name = _export_name_stem(req.output_name) if req.output_name and req.output_name.strip() else None
+        filename = req.output_name if custom_name else f"{safe_song}_DAY_{day_num:02d}_{tpl_name}_{aspect_slug}.mp4"
+        out_file = str(_reserve_export_path(out_dir, filename, preserve_name=custom_name is not None))
+        EXPORT_TASKS[task_id]["output_file"] = out_file
 
         def on_progress(p: float, msg: str):
             EXPORT_TASKS[task_id]["progress"] = p
@@ -555,6 +1060,7 @@ def _execute_export(task_id: str, req: ExportRequest):
             lyrics=req.lyrics,
             show_lyrics=req.show_lyrics if req.show_lyrics is not None else True,
             subtitle_style=req.subtitle_style or "minimal",
+            subtitle_animation=req.subtitle_animation or "auto",
             subtitle_language=req.subtitle_language or "both",
             smart_loop=req.smart_loop if req.smart_loop is not None else True,
             loop_mode=req.loop_mode or "standard",
@@ -562,6 +1068,7 @@ def _execute_export(task_id: str, req: ExportRequest):
             fade_in=bool(req.fade_in),
             fade_out=bool(req.fade_out),
             fade_duration=req.fade_duration if req.fade_duration is not None else 0.50,
+            hook_fade_start=req.hook_fade_start if req.hook_fade_start is not None else 0.0,
             watermark=req.watermark,
             creator_badge=req.creator_badge,
             subtitle_color=req.subtitle_color,
@@ -572,10 +1079,24 @@ def _execute_export(task_id: str, req: ExportRequest):
             subtitle_y=req.subtitle_y,
             subtitle_x=req.subtitle_x,
             subtitle_font_size=req.subtitle_font_size,
+            subtitle_font=req.subtitle_font or "segoe",
+            audio_master=req.audio_master.model_dump() if req.audio_master else None,
+            music=req.music.model_dump() if req.music else None,
+            video_audio_volume=req.video_audio_volume,
             progress_callback=on_progress
         )
 
         duration = (req.end_time or 35.0) - (req.start_time or 0.0)
+        resolution = None
+        fps = None
+        try:
+            exported_info = probe_video(final_path)
+            if exported_info.width > 0 and exported_info.height > 0:
+                resolution = f"{exported_info.width}x{exported_info.height}"
+            if exported_info.fps > 0:
+                fps = exported_info.fps
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"[History] Could not read exported video metadata for {final_path}: {exc}")
         # Record into history
         hist_entry = project_manager.add_history_entry(
             day=req.day_number if req.day_number is not None else 1,
@@ -583,7 +1104,13 @@ def _execute_export(task_id: str, req: ExportRequest):
             anime=req.anime_name or "Anime",
             duration=duration,
             template=tpl.get("name", "Custom"),
-            export_path=final_path
+            export_path=final_path,
+            name=custom_name or Path(final_path).stem,
+            format="mp4",
+            aspect_ratio=req.aspect_ratio or "9:16",
+            resolution=resolution,
+            fps=fps,
+            hook_text=req.series_text or "",
         )
 
         EXPORT_TASKS[task_id]["status"] = "completed"
@@ -599,6 +1126,12 @@ def _execute_export(task_id: str, req: ExportRequest):
 @app.post("/api/export")
 @app.post("/api/render-reel")
 def api_start_export(req: ExportRequest, background_tasks: BackgroundTasks):
+    if req.music:
+        try:
+            music_library.validate_range(req.music.track_id, req.music.start, req.music.end)
+            music_library.resolve_file(req.music.track_id)
+        except (KeyError, ValueError, FileNotFoundError, RuntimeError, OSError) as exc:
+            _music_error(exc)
     task_id = str(uuid.uuid4())
     EXPORT_TASKS[task_id] = {
         "id": task_id,
@@ -620,7 +1153,93 @@ def api_get_export_status(task_id: str):
 # History & Projects endpoints
 @app.get("/api/history")
 def api_get_history():
-    return project_manager.get_history()
+    export_roots = [
+        (APP_ROOT / "exports").resolve(),
+        Path(get_settings().default_export_dir).resolve(),
+    ]
+    return [_history_details(entry, export_roots) for entry in project_manager.get_history()]
+
+
+@app.delete("/api/history/{history_id}/file")
+def api_delete_history_file(history_id: str):
+    """Delete an exported video selected by history ID, retaining its metadata."""
+    matches = [row for row in project_manager.get_history() if row.get("id") == history_id]
+    if not matches:
+        raise HTTPException(status_code=404, detail="Export history entry not found.")
+    if len(matches) > 1:
+        raise HTTPException(status_code=409, detail="This older history ID matches multiple exports. Delete the intended file from its export folder instead.")
+    entry = matches[0]
+    raw_path = entry.get("export_location")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise HTTPException(status_code=400, detail="This history entry has no exported video path.")
+    try:
+        roots = [(APP_ROOT / "exports").resolve(), Path(get_settings().default_export_dir).resolve()]
+        candidate = Path(raw_path)
+        if not candidate.is_absolute():
+            candidate = APP_ROOT / candidate
+        path = candidate.resolve()
+        if path.suffix.lower() not in VIDEO_EXTENSIONS or not any(path.is_relative_to(root) for root in roots):
+            raise HTTPException(status_code=403, detail="Only videos inside the export folder can be deleted.")
+        if candidate.is_symlink():
+            raise HTTPException(status_code=403, detail="Linked files cannot be deleted from History. Manage the link on your PC.")
+        for task in list(EXPORT_TASKS.values()):
+            active_output = task.get("output_file")
+            if task.get("status") not in ("queued", "rendering") or not active_output:
+                continue
+            active_path = Path(active_output)
+            if not active_path.is_absolute():
+                active_path = APP_ROOT / active_path
+            if active_path.resolve() == path:
+                raise HTTPException(status_code=409, detail="This video is still exporting. Wait until the export finishes.")
+        file_stat = path.stat()
+        if not stat.S_ISREG(file_stat.st_mode):
+            raise HTTPException(status_code=400, detail="This history entry does not point to a video file.")
+        path.unlink()
+        return {"deleted": True, "freed_bytes": file_stat.st_size}
+    except FileNotFoundError:
+        return {"deleted": False, "freed_bytes": 0}
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail="Cannot delete this video. Close any app using it, check file permissions, and try again.") from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=f"Could not delete exported video: {exc}") from exc
+
+
+def _history_details(entry: Dict[str, Any], export_roots: list[Path]) -> Dict[str, Any]:
+    """Enrich old records cheaply without probing videos or rewriting user history."""
+    result = dict(entry)
+    raw_path = entry.get("export_location") or ""
+    file_name = PureWindowsPath(str(raw_path)).name or entry.get("file_name") or ""
+    saved_name = entry.get("name")
+    result["file_name"] = file_name
+    result["display_name"] = (
+        saved_name.strip() if isinstance(saved_name, str) and saved_name.strip()
+        else PureWindowsPath(file_name).stem or "Unnamed reel"
+    )
+    result["format"] = entry.get("format") or PureWindowsPath(file_name).suffix.lstrip(".").lower() or "mp4"
+    result["created_at"] = entry.get("created_at") or entry.get("created_date")
+    result["available"] = False
+    result["size_bytes"] = None
+    if raw_path:
+        try:
+            path = Path(str(raw_path))
+            if not path.is_absolute():
+                path = APP_ROOT / path
+            path = path.resolve()
+            if path.suffix.lower() in VIDEO_EXTENSIONS and any(path.is_relative_to(root) for root in export_roots):
+                file_stat = path.stat()
+                if stat.S_ISREG(file_stat.st_mode):
+                    result["available"] = True
+                    result["size_bytes"] = file_stat.st_size
+        except (OSError, ValueError):
+            # Missing or inaccessible files are a valid history state.
+            pass
+    duration = entry.get("duration_seconds", entry.get("duration"))
+    try:
+        seconds = float(str(duration).rstrip("s"))
+        result["duration_seconds"] = seconds if math.isfinite(seconds) and seconds >= 0 else None
+    except (TypeError, ValueError):
+        result["duration_seconds"] = None
+    return result
 
 @app.get("/api/projects")
 def api_get_projects():
