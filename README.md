@@ -1,6 +1,8 @@
 # Vibe Editor
 
-A local browser-based studio for creating vertical reels from videos and images. Import media, choose a clip, add music and text, preview your edits, and export an MP4.
+Vibe Editor is for those who take existing content, make simple edits and post it as Instagram reels. Add hooks, music, subtitles and watermarks without complicated editing.
+
+Built around my posting workflow on [@lap_lac7](https://www.instagram.com/lap_lac7/), where my reels reached **4 million views in 30 days**.
 
 ## Features
 
